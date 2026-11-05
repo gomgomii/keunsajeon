@@ -1,0 +1,959 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>큰사전 원고 지킴이</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Jua&family=Gowun+Dodum&family=Gowun+Batang:wght@400;700&display=swap" rel="stylesheet">
+<style>
+/* 1차시: 원고가 걸어온 시간 여행 길(1910~1945) · 2차시: 1957 큰사전 완간 기념관. 화면 UI는 '먹 남색', 해낸 순간과 도장은 '인주 빨강', 원고는 '한지 노랑' */
+:root{
+  --navy:#2b3f5c; --navy-soft:#e4e9f1;
+  --flame:#c0402f; --flame-soft:#fde8e2;
+  --clue:#2e6b4f; --clue-soft:#e0f0e6;
+  --ink:#1e2430; --muted:#5a6270; --line:#d3d9e2;
+  --good:#22814d; --good-soft:#ddf2e5; --bad:#c2412d; --bad-soft:#fbe3de;
+  --paper:#fbf5e6; --glass:rgba(255,255,255,.93);
+  --font-display:"Jua","Gowun Dodum","Malgun Gothic",sans-serif;
+  --font-body:"Gowun Dodum","Malgun Gothic",sans-serif;
+  --font-story:"Gowun Batang","Batang",serif;
+  color-scheme:light;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;overflow:hidden;background:#1d2230;color:var(--ink);font-family:var(--font-body)}
+button{font:inherit;cursor:pointer;color:inherit}
+button:focus-visible,input:focus-visible,textarea:focus-visible{outline:3px solid var(--flame);outline-offset:2px}
+h1,h2,h3{font-family:var(--font-display);font-weight:400;margin:0;line-height:1.25;text-wrap:balance}
+p{margin:0}
+#stage{position:fixed;inset:0}
+#stage canvas{display:block;width:100%;height:100%;touch-action:none}
+.hud{position:fixed;left:0;right:0;top:0;pointer-events:none;display:flex;gap:10px;padding:12px 14px;flex-wrap:wrap;justify-content:space-between;align-items:flex-start;z-index:4}
+.hud>*{pointer-events:auto}
+.pill{background:var(--glass);border-radius:999px;padding:7px 8px 7px 16px;display:flex;align-items:center;gap:10px;box-shadow:0 4px 18px rgba(0,0,0,.22)}
+.brand b{font-family:var(--font-display);font-weight:400;font-size:18px;color:var(--navy)}
+.chip{font-family:var(--font-display);font-size:15px;padding:4px 12px;border-radius:999px;background:var(--flame-soft);color:var(--flame);white-space:nowrap}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.btn{border:0;border-radius:12px;padding:9px 16px;background:var(--navy);color:#fff;font-family:var(--font-display);font-size:16px;line-height:1.2}
+.btn:hover{filter:brightness(1.1)}
+.btn.ghost{background:#fff;color:var(--navy);box-shadow:inset 0 0 0 1.5px var(--navy)}
+.btn.flame{background:var(--flame)}
+.btn.clue{background:var(--clue)}
+.btn.sm{padding:7px 12px;font-size:15px}
+.btn.big{padding:13px 24px;font-size:20px;border-radius:14px}
+.btn:disabled{opacity:.45;cursor:default;filter:none}
+.hud .btn{box-shadow:0 4px 14px rgba(0,0,0,.22)}
+.hud .btn.ghost{box-shadow:inset 0 0 0 1.5px var(--navy),0 4px 14px rgba(0,0,0,.22)}
+.timer{position:fixed;left:50%;top:64px;transform:translateX(-50%);z-index:5;display:none;background:#fff7d6;border:2px solid #d9a441;border-radius:999px;padding:6px 8px 6px 16px;gap:10px;align-items:center;box-shadow:0 6px 18px rgba(0,0,0,.3);font-family:var(--font-display);font-size:18px;color:#7a5200}
+.timer.on{display:flex}
+.prompt{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);display:none;z-index:4}
+.prompt.on{display:block}
+.prompt button{box-shadow:0 6px 20px rgba(0,0,0,.35);font-size:19px;padding:13px 24px;border-radius:16px;white-space:nowrap}
+.dpad{position:fixed;left:14px;bottom:14px;display:grid;grid-template-columns:repeat(3,56px);grid-template-rows:repeat(2,56px);gap:5px;z-index:4}
+.dpad button{border:0;border-radius:14px;background:var(--glass);font-size:22px;color:var(--navy);box-shadow:0 3px 10px rgba(0,0,0,.25);user-select:none;-webkit-user-select:none;touch-action:none}
+.dpad .u{grid-column:2;grid-row:1}.dpad .l{grid-column:1;grid-row:2}.dpad .d{grid-column:2;grid-row:2}.dpad .r{grid-column:3;grid-row:2}
+.acts{position:fixed;right:14px;bottom:14px;display:flex;gap:10px;align-items:flex-end;z-index:4}
+.acts button{width:70px;height:70px;border-radius:50%;border:0;background:var(--glass);font-family:var(--font-display);font-size:17px;color:var(--navy);box-shadow:0 3px 10px rgba(0,0,0,.3);user-select:none;-webkit-user-select:none;touch-action:none}
+.acts #jumpB{width:86px;height:86px;background:var(--navy);color:#fff;font-size:20px}
+.acts #runB[aria-pressed="true"]{background:var(--flame);color:#fff}
+/* 활동 창 */
+.sheet{position:fixed;top:0;right:0;bottom:0;width:min(480px,100%);background:#fff;box-shadow:-10px 0 30px rgba(0,0,0,.3);transform:translateX(105%);transition:transform .3s ease;display:flex;flex-direction:column;z-index:10}
+.sheet.on{transform:none}
+.sheet header{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--line)}
+.sheet header h2{font-size:23px;color:var(--navy)}
+.sheet header small{display:block;font-family:var(--font-body);font-size:13px;color:var(--muted)}
+.sheet .body{padding:16px 18px 34px;overflow-y:auto;display:grid;gap:14px;align-content:start;font-size:16.5px;line-height:1.65}
+.close{border:0;background:var(--navy-soft);color:var(--navy);border-radius:12px;width:42px;height:42px;font-size:22px;flex:none}
+.box{background:#f4f6fa;border-radius:14px;padding:13px 15px;display:grid;gap:8px}
+.box h3{font-size:18px;color:var(--navy)}
+.box.case{background:var(--paper);border:1.5px dashed #c9b48c}
+.box.case h3{color:var(--flame)}
+.box.warm{background:var(--flame-soft)}.box.warm h3{color:#8a2a1a}
+.note{font-size:14px;color:var(--muted)}
+.term{border-left:4px solid var(--navy);background:#fff;border-radius:8px;padding:8px 12px;font-size:15px}
+.term b{font-family:var(--font-display);font-weight:400;color:var(--navy);font-size:17px;margin-right:6px}
+.wb{justify-self:start;font-family:var(--font-display);font-size:15px;padding:5px 12px;border-radius:999px;background:#fff4d6;color:#7a5200;border:1.5px dashed #d9a441}
+.opts{display:grid;gap:8px}
+.opt{border:2px solid var(--line);background:#fff;border-radius:12px;padding:10px 13px;text-align:left;font-size:16.5px}
+.opt:hover:not(:disabled){border-color:var(--navy)}
+.opt[aria-pressed="true"]{border-color:var(--navy);background:var(--navy-soft)}
+.opt.right{border-color:var(--good);background:var(--good-soft)}
+.opt.wrong{border-color:var(--bad);background:var(--bad-soft);opacity:.75}
+.fb{min-height:1.2em;font-size:15.5px}
+.fb .good{color:var(--good);font-family:var(--font-display);font-size:18px}
+.fb .bad{color:var(--bad);font-family:var(--font-display);font-size:18px}
+textarea,input[type=text]{width:100%;font:inherit;font-size:16px;padding:10px 12px;border-radius:12px;border:2px solid var(--line);background:#fff}
+textarea{min-height:76px;resize:vertical}
+.checks{display:grid;gap:6px}
+.checks label{display:flex;gap:10px;align-items:flex-start;background:#fff;border:2px solid var(--line);border-radius:10px;padding:8px 10px;cursor:pointer;font-size:15.5px}
+.checks input{width:20px;height:20px;flex:none;margin-top:2px;accent-color:var(--navy)}
+.checks label.ok{border-color:var(--good);background:var(--good-soft)}
+.checks label.no{border-color:var(--bad);background:var(--bad-soft)}
+.sort{display:grid;gap:8px}
+.sort .it{display:grid;grid-template-columns:1fr auto auto;gap:6px;align-items:center;background:#fff;border-radius:12px;padding:8px 10px;border:2px solid var(--line);font-size:15.5px}
+.sort .it.ok{border-color:var(--good);background:var(--good-soft)}
+.sort .it button{border:1.5px solid var(--line);background:#fff;border-radius:10px;padding:6px 10px;font-size:14px}
+.sort .it button.pick{border-color:var(--good);background:var(--good);color:#fff}
+.shake{animation:shake .4s}
+@keyframes shake{20%{transform:translateX(-6px)}40%{transform:translateX(6px)}60%{transform:translateX(-4px)}80%{transform:translateX(4px)}}
+.lab{background:#fff;border-radius:12px;border:2px solid var(--line);padding:10px;display:grid;gap:8px;justify-items:center}
+.lab canvas{width:100%;max-width:400px;height:auto;border-radius:10px;background:#f7f3ea}
+.cards{display:flex;flex-wrap:wrap;gap:6px}
+.card{border:2px solid var(--line);background:#fff;border-radius:999px;padding:7px 13px;font-size:15.5px;font-family:var(--font-display)}
+.card[aria-pressed="true"]{border-color:var(--flame);box-shadow:0 0 0 3px var(--flame-soft)}
+.card.used{display:none}
+.fm{display:grid;gap:8px}
+.fmr{background:#fff;border:2px solid var(--line);border-radius:12px;padding:9px 12px;font-size:16px;line-height:1.7;cursor:pointer;text-align:left}
+.fmr.ok{border-color:var(--good);background:var(--good-soft);cursor:default}
+.slot{display:inline-block;min-width:92px;border-bottom:2px dashed var(--flame);color:var(--flame);font-family:var(--font-display);text-align:center;padding:0 6px;margin:0 3px}
+.fmr.ok .slot{border-bottom-color:var(--good);color:var(--good)}
+.ord{display:grid;gap:6px;counter-reset:o;margin:0;padding:0;list-style:none}
+.ord li{counter-increment:o;background:var(--good-soft);border:2px solid var(--good);border-radius:10px;padding:7px 10px 7px 40px;position:relative;font-size:15.5px}
+.ord li::before{content:counter(o);position:absolute;left:10px;top:7px;width:22px;height:22px;border-radius:50%;background:var(--good);color:#fff;font-family:var(--font-display);text-align:center;line-height:22px;font-size:14px}
+.wc{background:#fff4d6;border:2px solid #d9a441;border-radius:14px;padding:13px 15px;display:grid;gap:8px}
+.wc h3{color:#7a5200;font-size:19px}
+.wc label{display:flex;gap:10px;align-items:flex-start;font-size:16px;background:#fff;border-radius:10px;padding:8px 10px;cursor:pointer;line-height:1.5}
+.wc input{width:22px;height:22px;flex:none;margin-top:2px;accent-color:var(--flame)}
+.cluecard{background:var(--paper);border:2px solid var(--flame);border-radius:14px;padding:12px 14px;display:grid;grid-template-columns:auto 1fr;gap:4px 12px;align-items:center;box-shadow:4px 4px 0 var(--flame-soft)}
+.cluecard b{font-family:var(--font-display);font-weight:400;color:var(--flame);font-size:18px}
+.seal{grid-row:span 2;width:58px;height:58px;border-radius:50%;border:3px solid var(--flame);color:var(--flame);display:grid;place-items:center;font-family:var(--font-display);font-size:15px;line-height:1.05;text-align:center;transform:rotate(-8deg);background:#fff}
+.gbox{background:linear-gradient(135deg,#fff7da,#ffe9b0);border:2px solid #d9a441;border-radius:14px;padding:13px 15px;display:grid;gap:8px}
+.gbox h3{color:#7a5200;font-size:18px}
+.stars{font-family:var(--font-display);font-size:26px;color:#d18a00;letter-spacing:3px}
+.stars i{font-style:normal;color:#e6d7c3}
+.read{background:var(--paper);border:2px solid #c9b48c;border-radius:14px;padding:14px 15px;display:grid;gap:10px;font-family:var(--font-story)}
+.read h3{font-family:var(--font-display);color:var(--navy)}
+.read .pg{font-family:var(--font-display);font-size:22px;color:var(--flame)}
+.ex{background:#fff;border:2px dashed var(--clue);border-radius:12px;padding:9px 12px;font-size:15px}
+.ex b{color:var(--clue);font-family:var(--font-display);font-weight:400}
+.toast{position:fixed;left:50%;top:70px;transform:translateX(-50%);background:var(--flame);color:#fff;font-family:var(--font-display);font-size:19px;padding:10px 20px;border-radius:999px;box-shadow:0 6px 18px rgba(0,0,0,.3);opacity:0;transition:opacity .3s;pointer-events:none;z-index:40;max-width:calc(100% - 32px);text-align:center}
+.toast.on{opacity:1}
+/* 대화 */
+.dlg{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);width:min(780px,calc(100% - 24px));background:#fffdf7;border-radius:20px;box-shadow:0 14px 40px rgba(0,0,0,.4);display:none;grid-template-columns:96px 1fr;gap:14px;padding:16px 18px;z-index:22;border:3px solid var(--flame)}
+.dlg.on{display:grid}
+.dlg canvas{width:96px;height:96px;border-radius:50%}
+.dlgm{display:grid;gap:6px;min-width:0}
+.dlg .who b{font-family:var(--font-display);font-weight:400;font-size:21px}
+.dlg .who span{font-size:13.5px;color:var(--muted);margin-left:8px}
+.dlg .say{font-size:18.5px;line-height:1.6;min-height:3.3em;margin:0;font-family:var(--font-story)}
+.dlg .nav{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+/* 시간 여행 지도 */
+.map{position:fixed;inset:0;z-index:30;overflow:auto;padding:16px;display:none;background:linear-gradient(180deg,#e9dfc8,#d9c9a5)}
+.map.on{display:block}
+.map-in{max-width:1080px;margin:0 auto;display:grid;gap:14px}
+.map-top{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;background:#fffaf0;border-radius:14px;padding:12px 16px;box-shadow:0 6px 18px rgba(0,0,0,.18)}
+.map-top h1{font-size:clamp(24px,4vw,32px);color:var(--navy)}
+.map-top p{font-size:14.5px;color:var(--muted)}
+.day{display:grid;gap:10px}
+.day h2{font-size:21px;color:var(--navy);display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+.day h2 small{font-family:var(--font-body);font-size:14px;color:var(--muted)}
+.cases{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:14px}
+.ccard{position:relative;background:#fffdf6;border-radius:10px;padding:12px 12px 10px;box-shadow:0 6px 14px rgba(60,40,10,.25);display:grid;gap:6px;text-align:left;border:0;transition:transform .2s}
+.ccard:hover:not(:disabled){transform:translateY(-3px)}
+.ccard .n{font-family:var(--font-display);font-size:13px;color:var(--muted)}
+.ccard h3{font-size:18px;color:var(--ink)}
+.ccard .pl{font-size:14px;color:var(--navy)}
+.ccard canvas{width:100%;height:86px;border-radius:6px;background:#eee}
+.ccard .st{justify-self:start;font-family:var(--font-display);font-size:14px;padding:3px 10px;border-radius:999px;background:var(--navy-soft);color:var(--navy)}
+.ccard.done .st{background:var(--flame-soft);color:var(--flame)}
+.ccard:disabled{filter:grayscale(.8) brightness(.9);cursor:default}
+.ccard:disabled .st{background:#eee;color:#777}
+.intro{position:fixed;inset:0;z-index:45;display:grid;place-items:center;padding:16px;overflow:auto;background:radial-gradient(ellipse at 50% 40%,#4a3a2a 0%,#1a1612 75%)}
+.intro.gone{display:none}
+.intro-card{width:min(600px,100%);background:var(--paper);border-radius:22px;padding:24px 22px 20px;box-shadow:0 20px 60px rgba(0,0,0,.5);display:grid;gap:14px;border:3px solid #c9b48c}
+.intro-card .eb{font-size:14px;color:var(--muted)}
+.intro-card h1{font-size:clamp(28px,5vw,38px);color:var(--flame)}
+.intro-card .story{font-size:16.5px;line-height:1.8;font-family:var(--font-story)}
+.how{font-size:14.5px;background:var(--navy-soft);border-radius:12px;padding:9px 12px}
+.cert{border:6px double var(--flame);border-radius:16px;padding:20px 18px;text-align:center;display:grid;gap:8px;background:var(--paper)}
+.cert h3{font-size:26px;color:var(--flame)}
+.cert .who{font-family:var(--font-display);font-size:30px}
+.cert p{font-family:var(--font-story)}
+table.plan{border-collapse:collapse;width:100%;font-size:15px}
+table.plan th,table.plan td{border-bottom:1px solid var(--line);padding:6px 4px;text-align:left;vertical-align:top}
+table.plan th{font-family:var(--font-display);font-weight:400;color:var(--navy);white-space:nowrap}
+.list{margin:0;padding-left:20px}
+@media (max-width:700px){
+  .sheet{top:auto;height:82%;width:100%;border-radius:20px 20px 0 0;transform:translateY(105%)}
+  .sheet.on{transform:none}
+  .prompt{bottom:136px}
+  .acts button{width:58px;height:58px;font-size:15px}.acts #jumpB{width:70px;height:70px;font-size:17px}
+  .dlg{grid-template-columns:64px 1fr}.dlg canvas{width:64px;height:64px}.dlg .say{font-size:16.5px}
+  .brand b{font-size:15px}
+}
+@media (max-width:520px){.brand b{display:none}.pill{padding-left:8px}}
+@media (prefers-reduced-motion:reduce){.sheet,.toast,.ccard{transition:none}.shake{animation:none}}
+</style>
+</head>
+<body>
+<div id="stage" aria-label="큰사전 원고 지킴이 3D 공간. 인물을 움직여 장면을 둘러볼 수 있어요."></div>
+
+<div class="hud">
+  <div class="pill brand"><b>큰사전 원고 지킴이</b><span class="chip" id="sceneChip">시간 여행 지도</span></div>
+  <div class="row">
+    <button class="btn flame sm" id="clueBtn" type="button">도장 <span id="clueN">0</span> / 10 · ★ <span id="starN">0</span></button>
+    <button class="btn ghost sm" id="mapBtn" type="button">시간 여행 지도</button>
+    <button class="btn ghost sm" id="teachBtn" type="button">선생님</button>
+  </div>
+</div>
+<div class="timer" id="timer" role="status"><span id="timerT"></span><button class="btn ghost sm" id="timerStop" type="button">그만하기</button></div>
+<div class="prompt" id="prompt"><button class="btn" id="promptBtn" type="button"></button></div>
+<div class="dpad" aria-label="걷기 버튼">
+  <button class="u" data-k="up" type="button" aria-label="앞으로">▲</button>
+  <button class="l" data-k="left" type="button" aria-label="왼쪽으로 돌기">◀</button>
+  <button class="d" data-k="down" type="button" aria-label="뒤로">▼</button>
+  <button class="r" data-k="right" type="button" aria-label="오른쪽으로 돌기">▶</button>
+</div>
+<div class="acts"><button id="runB" type="button" aria-pressed="false">달리기</button><button id="jumpB" type="button">점프</button></div>
+
+<aside class="sheet" id="sheet" role="dialog" aria-labelledby="sheetTitle" aria-hidden="true">
+  <header><h2 id="sheetTitle"></h2><button class="close" id="sheetClose" type="button" aria-label="창 닫기">×</button></header>
+  <div class="body" id="sheetBody"></div>
+</aside>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<div class="dlg" id="dlg" role="dialog" aria-labelledby="dlgName">
+  <canvas id="dlgFace" width="192" height="192" aria-hidden="true"></canvas>
+  <div class="dlgm"><div class="who"><b id="dlgName"></b><span id="dlgRole"></span></div><p class="say" id="dlgSay" aria-live="polite"></p>
+    <div class="nav"><span class="note" id="dlgStep"></span><div class="row"><button class="btn ghost sm" id="dlgSkip" type="button">건너뛰기</button><button class="btn" id="dlgNext" type="button">다음 ▶</button></div></div></div>
+</div>
+<div class="map" id="map" aria-label="시간 여행 지도">
+  <div class="map-in">
+    <div class="map-top"><div><h1>시간 여행 지도</h1><p>장면을 순서대로 찾아가요. 교과서에 쓰고 도장을 받아야 다음 장면이 열려요.</p></div><button class="btn ghost sm" id="mapClose" type="button">장면으로 돌아가기</button></div>
+    <div id="days"></div>
+  </div>
+</div>
+<div class="intro" id="intro">
+  <div class="intro-card">
+    <div class="eb">6학년 2학기 국어 · 4. 소중한 우리말 · 「큰사전이 필요하다」 · 교과서 194~203쪽</div>
+    <h1>큰사전 원고 지킴이</h1>
+    <p class="story">1957년, 『조선말 큰사전』의 마지막 여섯째 권이 나왔어요. 하지만 이 사전이 세상에 나오기까지 원고는 여러 번 사라질 뻔했어요. <b>시간 여행자</b>가 되어 1910년 거리부터 1945년 서울역 창고까지 원고가 걸어온 길을 따라가 보세요. 장면마다 그때 사람들의 이야기를 듣고, 교과서를 꼼꼼히 읽고, 도장을 모아요.</p>
+    <div class="how">▲▼ 걷기, ◀▶ 돌기, 오른쪽 아래 <b>점프·달리기</b> (키보드는 Space·Shift). 사람이나 물건을 누르면 그 앞까지 걸어가요. 장면에 들어가면 <b>먼저 교과서 그 쪽을 읽고</b>, 활동을 마친 뒤 <b>교과서에 쓰고 체크</b>해야 도장을 받아요.</div>
+    <div class="row"><button class="btn big flame" id="startBtn" type="button">시간 여행 지도 펼치기</button><span class="note" id="introSaved"></span></div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function(){
+'use strict';
+const $=s=>document.querySelector(s);
+function el(html){const d=document.createElement('div');d.innerHTML=html.trim();return d.firstElementChild;}
+const reduceMotion=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+function shuffle(a){a=a.slice();for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
+
+/* ---------------- 기록 (이 기기에만) ---------------- */
+const KEY='keunsajeon-v1';
+function fresh(){return {stamps:{},done:{},met:{},read:{},stars:{},txt:{},pick:{},name:'',free:false};}
+let S=fresh();
+try{const raw=JSON.parse(localStorage.getItem(KEY));if(raw)S=Object.assign(fresh(),raw);}catch(e){}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){}}
+
+/* ---------------- 소리 ---------------- */
+let actx=null;
+function ac(){try{actx=actx||new (window.AudioContext||window.webkitAudioContext)();if(actx.state==='suspended')actx.resume();return actx;}catch(e){return null;}}
+function tone(seq,type,vol){const c=ac();if(!c)return;let t=c.currentTime+.01;seq.forEach(([f,d])=>{const o=c.createOscillator(),g=c.createGain();o.type=type||'sine';o.frequency.value=f;g.gain.setValueAtTime(.0001,t);g.gain.exponentialRampToValueAtTime(vol||.16,t+.02);g.gain.exponentialRampToValueAtTime(.0001,t+d);o.connect(g);g.connect(c.destination);o.start(t);o.stop(t+d+.05);t+=d*.75;});}
+const sfx={ok:()=>tone([[660,.12],[990,.24]],'triangle'),no:()=>tone([[240,.16],[190,.22]],'square',.05),tap:()=>tone([[880,.06]],'sine',.07),
+  stamp:()=>tone([[196,.08],[392,.1],[523,.1],[659,.35]],'triangle'),fan:()=>tone([[523,.14],[659,.14],[784,.14],[1047,.16],[784,.12],[1047,.55]],'triangle'),
+  pick:()=>tone([[784,.06],[1175,.1]],'triangle',.1)};
+const toastEl=$('#toast');let toastT=null;
+function toast(m,ms){toastEl.textContent=m;toastEl.classList.add('on');clearTimeout(toastT);toastT=setTimeout(()=>toastEl.classList.remove('on'),ms||2200);}
+
+/* ---------------- 3D 기본 ---------------- */
+const stage=$('#stage');
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,1.5));renderer.outputEncoding=THREE.sRGBEncoding;stage.appendChild(renderer.domElement);
+const scene=new THREE.Scene();scene.background=new THREE.Color(0x1d2230);scene.fog=new THREE.Fog(0x1d2230,14,40);
+const camera=new THREE.PerspectiveCamera(62,1,.1,140);
+const hemi=new THREE.HemisphereLight(0xffffff,0x8a7a66,.9);scene.add(hemi);
+const sun=new THREE.DirectionalLight(0xffffff,.55);sun.position.set(4,10,6);scene.add(sun);
+function mat(c,o){return new THREE.MeshStandardMaterial(Object.assign({color:c,roughness:.75},o||{}));}
+const redraws=[];
+function canvasTex(w,h,draw){const c=document.createElement('canvas');c.width=w;c.height=h;const g=c.getContext('2d');const t=new THREE.CanvasTexture(c);t.encoding=THREE.sRGBEncoding;t.anisotropy=4;
+  const r=()=>{g.clearRect(0,0,w,h);draw(g,w,h);t.needsUpdate=true;};r();redraws.push(r);t.userData=t.userData||{};t.userData.redraw=r;return t;}
+function roundRect(g,x,y,w,h,r){g.beginPath();g.moveTo(x+r,y);g.arcTo(x+w,y,x+w,y+h,r);g.arcTo(x+w,y+h,x,y+h,r);g.arcTo(x,y+h,x,y,r);g.arcTo(x,y,x+w,y,r);g.closePath();}
+function label(text,o){o=o||{};const fs=o.fs||52,pad=24,w=Math.ceil(text.length*fs*.98+pad*2),h=Math.ceil(fs*1.55);
+  const tex=canvasTex(w,h,g=>{g.fillStyle=o.bg||'rgba(255,255,255,.94)';roundRect(g,2,2,w-4,h-4,h*.3);g.fill();
+    g.fillStyle=o.fg||'#1e2430';g.font=fs+'px Jua, "Malgun Gothic", sans-serif';g.textAlign='center';g.textBaseline='middle';g.fillText(text,w/2,h/2+fs*.05);});
+  const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:tex,transparent:true,depthWrite:false}));const H=o.h||.4;sp.scale.set(H*w/h,H,1);return sp;}
+function B(g,w,h,d,c,x,y,z,o){const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),c&&c.isMaterial?c:mat(c,o));m.position.set(x,y,z);g.add(m);return m;}
+function C(g,rt,rb,h,c,x,y,z,o,seg){const m=new THREE.Mesh(new THREE.CylinderGeometry(rt,rb,h,seg||20),c&&c.isMaterial?c:mat(c,o));m.position.set(x,y,z);g.add(m);return m;}
+function P(g,w,h,tex,x,y,z,ry){const m=new THREE.Mesh(new THREE.PlaneGeometry(w,h),new THREE.MeshBasicMaterial({map:tex,transparent:true,toneMapped:false}));m.position.set(x,y,z);m.rotation.y=ry||0;g.add(m);return m;}
+function table(g,x,z,w,d,col){B(g,w,.08,d,col||0x8a6a4a,x,.82,z);[[-1,-1],[1,-1],[-1,1],[1,1]].forEach(([a,b])=>B(g,.07,.8,.07,0x5a4632,x+a*(w/2-.08),.4,z+b*(d/2-.08)));}
+function roof(g,x,y,z,w,d,h,col){const rg=new THREE.Group();rg.position.set(x,y+h/2,z);const m=new THREE.Mesh(new THREE.ConeGeometry(Math.SQRT1_2,1,4),mat(col,{roughness:.9}));m.rotation.y=Math.PI/4;rg.add(m);rg.scale.set(w*1.2,h,d*1.25);g.add(rg);return rg;}
+function house(g,x,z,w,d,ry,wall,rc){const hg=new THREE.Group();hg.position.set(x,0,z);hg.rotation.y=ry||0;g.add(hg);B(hg,w,1.9,d,wall,0,.95,0);B(hg,w+.1,.3,d+.1,0x6b5a48,0,.15,0);
+  B(hg,.8,1.3,.04,0x5a3e28,0,.75,d/2+.02);[-1,1].forEach(s=>B(hg,.6,.5,.04,0xf1e6c8,s*w*.3,1.2,d/2+.02));roof(hg,0,1.9,0,w,d,1,rc);return hg;}
+function pine(g,x,z,s){s=s||1;C(g,.09*s,.14*s,1.8*s,0x6b4a32,x,.9*s,z);[[1.6,.9],[2.1,.7],[2.5,.45]].forEach(([y,r])=>{const m=new THREE.Mesh(new THREE.SphereGeometry(r*s,12,8),mat(0x3d7a4c,{roughness:.9}));m.scale.y=.45;m.position.set(x,y*s,z);g.add(m);});}
+function sign(g,text,sub,x,y,z,ry,bg,fg,w){w=w||4.6;const p=new THREE.Mesh(new THREE.PlaneGeometry(w,w*.196),new THREE.MeshBasicMaterial({map:canvasTex(1100,215,(c,W,H)=>{c.fillStyle=bg;roundRect(c,0,0,W,H,30);c.fill();c.fillStyle=fg;c.textAlign='center';c.textBaseline='middle';c.font='78px Jua, sans-serif';c.fillText(text,W/2,sub?82:H/2+4);if(sub){c.font='44px Jua, sans-serif';c.fillText(sub,W/2,160);}}),transparent:true,toneMapped:false}));p.position.set(x,y,z);p.rotation.y=ry||0;g.add(p);return p;}
+function room(g,hx,hz,floorMat,wallCol,o){o=o||{};
+  const fl=new THREE.Mesh(new THREE.PlaneGeometry(hx*2,hz*2),floorMat);fl.rotation.x=-Math.PI/2;g.add(fl);
+  [[0,-hz,0],[0,hz,Math.PI],[-hx,0,Math.PI/2],[hx,0,-Math.PI/2]].forEach(([x,z,r],i)=>{const w=new THREE.Mesh(new THREE.PlaneGeometry(i<2?hx*2:hz*2,o.wh||4.2),mat(wallCol,{roughness:.9}));w.position.set(x,(o.wh||4.2)/2,z);w.rotation.y=r;g.add(w);});
+  return fl;}
+function woodTex(a,b){return canvasTex(512,512,(g,w,h)=>{for(let i=0;i<16;i++){g.fillStyle=i%2?(a||'#8a603a'):(b||'#7b5532');g.fillRect(0,i*32,w,32);g.strokeStyle='rgba(0,0,0,.15)';g.beginPath();g.moveTo(0,i*32);g.lineTo(w,i*32);g.stroke();}});}
+function dirtTex(base){return canvasTex(512,512,(g,w,h)=>{g.fillStyle=base;g.fillRect(0,0,w,h);for(let i=0;i<900;i++){g.fillStyle='rgba(80,60,30,'+(Math.random()*.12)+')';g.fillRect(Math.random()*w,Math.random()*h,2+Math.random()*4,2+Math.random()*4);}});}
+function texMat(t,rep){t.wrapS=t.wrapT=THREE.RepeatWrapping;t.repeat.set(rep,rep);return new THREE.MeshStandardMaterial({map:t,roughness:.95});}
+const crateTex=canvasTex(256,256,(g,w,h)=>{g.fillStyle='#b88a52';g.fillRect(0,0,w,h);g.strokeStyle='#7a5530';g.lineWidth=14;g.strokeRect(7,7,w-14,h-14);g.beginPath();g.moveTo(10,10);g.lineTo(w-10,h-10);g.moveTo(w-10,10);g.lineTo(10,h-10);g.stroke();
+  g.strokeStyle='rgba(0,0,0,.15)';g.lineWidth=2;for(let i=1;i<6;i++){g.beginPath();g.moveTo(0,i*h/6);g.lineTo(w,i*h/6);g.stroke();}});
+const crateM=new THREE.MeshStandardMaterial({map:crateTex,roughness:.9});
+// 원고 뭉치 (끈으로 묶은 한지 묶음)
+function bundle(g,x,y,z,s,col){const bg=new THREE.Group();bg.position.set(x,y,z);g.add(bg);s=s||1;B(bg,.5*s,.16*s,.36*s,col||0xe0a24a,0,.08*s,0);B(bg,.52*s,.02,.04,0x3a2a1a,0,.165*s,0);B(bg,.04,.02,.38*s,0x3a2a1a,0,.165*s,0);return bg;}
+
+/* ---------------- 사람들 ---------------- */
+function makePerson(L){
+  const g=new THREE.Group(),b=new THREE.Group();g.add(b);
+  const sk=mat(L.skin),sh=mat(L.shirt),pa=mat(L.pants),hr=mat(L.hair,{roughness:.9});
+  const torso=new THREE.Mesh(new THREE.CylinderGeometry(.24,.3,.62,18),sh);torso.position.y=.74;b.add(torso);
+  [-.11,.11].forEach(x=>{const l=new THREE.Mesh(new THREE.CylinderGeometry(.085,.085,.46,10),pa);l.position.set(x,.23,0);b.add(l);});
+  [-1,1].forEach(s=>{const a=new THREE.Mesh(new THREE.CylinderGeometry(.06,.06,.5,10),L.coat?mat(L.coat):sh);a.position.set(s*.3,.76,0);a.rotation.z=s*.18;b.add(a);
+    const hd=new THREE.Mesh(new THREE.SphereGeometry(.065,10,8),sk);hd.position.set(s*.35,.5,0);b.add(hd);});
+  const head=new THREE.Mesh(new THREE.SphereGeometry(.26,22,16),sk);head.position.y=1.3;b.add(head);
+  const hair=new THREE.Mesh(new THREE.SphereGeometry(.275,22,12,0,Math.PI*2,0,Math.PI*.55),hr);hair.position.y=1.32;hair.rotation.x=-.25;b.add(hair);
+  if(L.braid){const br=C(b,.05,.03,.55,L.hair,0,1.0,-.24);br.rotation.x=.15;}
+  if(L.cap){const c=new THREE.Mesh(new THREE.SphereGeometry(.28,22,12,0,Math.PI*2,0,Math.PI/2),mat(L.cap));c.position.y=1.36;b.add(c);B(b,.32,.035,.2,L.cap,0,1.37,.27);}
+  if(L.gat){C(b,.13,.15,.24,0x1a1a1a,0,1.62,0);C(b,.46,.46,.02,0x1a1a1a,0,1.5,0,{transparent:true,opacity:.85});}
+  if(L.fedora){C(b,.2,.24,.2,L.fedora,0,1.56,0);C(b,.4,.4,.03,L.fedora,0,1.47,0);}
+  if(L.coat){const a=new THREE.Mesh(new THREE.CylinderGeometry(.26,.38,.86,18,1,true),mat(L.coat,{side:THREE.DoubleSide}));a.position.y=.6;b.add(a);}
+  if(L.skirt){const a=new THREE.Mesh(new THREE.CylinderGeometry(.27,.42,.6,18,1,true),mat(L.skirt,{side:THREE.DoubleSide}));a.position.y=.3;b.add(a);}
+  if(L.glasses){[-.09,.09].forEach(x=>{const r=new THREE.Mesh(new THREE.TorusGeometry(.05,.012,6,14),mat(0x222222));r.position.set(x,1.3,.25);b.add(r);});}
+  const em=new THREE.MeshBasicMaterial({color:0x2b221c});
+  [-.09,.09].forEach(x=>{const e=new THREE.Mesh(new THREE.SphereGeometry(.028,8,8),em);e.position.set(x,1.31,.24);e.scale.y=.75;b.add(e);});
+  const mo=new THREE.Mesh(new THREE.TorusGeometry(.05,.012,6,12,Math.PI),em);mo.position.set(0,1.2,.245);mo.rotation.z=Math.PI;b.add(mo);
+  g.scale.setScalar(L.h||1);g.userData.body=b;return g;
+}
+// 시간 여행자(플레이어): 남색 학생모와 보자기 가방
+const kid=new THREE.Group(),kb=new THREE.Group();kid.add(kb);
+const kSkin=mat(0xf6d9bd);
+const kTorso=new THREE.Mesh(new THREE.CylinderGeometry(.24,.3,.58,20),mat(0x3d5a80));kTorso.position.y=.68;kb.add(kTorso);
+const legs=[-.11,.11].map(x=>{const l=new THREE.Mesh(new THREE.CylinderGeometry(.08,.08,.42,10),mat(0x2a2a36));l.geometry.translate(0,-.21,0);l.position.set(x,.42,0);kb.add(l);return l;});
+const kHead=new THREE.Mesh(new THREE.SphereGeometry(.27,24,18),kSkin);kHead.position.y=1.2;kb.add(kHead);
+const kcap=new THREE.Mesh(new THREE.SphereGeometry(.285,22,12,0,Math.PI*2,0,Math.PI/2),mat(0x22324a));kcap.position.y=1.25;kb.add(kcap);B(kb,.34,.035,.22,0x111a28,0,1.27,.26);
+[-.09,.09].forEach(x=>{const e=new THREE.Mesh(new THREE.SphereGeometry(.03,8,8),new THREE.MeshBasicMaterial({color:0x2b221c}));e.position.set(x,1.17,.25);e.scale.y=.7;kb.add(e);});
+const pack=B(kb,.4,.38,.22,0xd2553f,0,.78,-.3);B(kb,.12,.1,.24,0xb8402e,0,1.0,-.3);
+scene.add(kid);
+
+/* ---------------- 장면 10곳 ---------------- */
+const SCENES=[];
+const SKY=0xbfd6e8;
+
+/* 1. 1910 거리 */
+SCENES.push({id:'y1910',day:1,no:'1차시',tb:'194~195',year:'1910',title:'호외요, 호외!',place:'1910년 거리',bg:SKY,fog:[16,42],hemi:.95,dir:.6,hx:7,hz:6,spawn:[0,4,Math.PI],
+ read:'194쪽 1번 사진부터, 195쪽 「…생을 바친 이가 있었다.」까지',
+ build(g,R){const gr=new THREE.Mesh(new THREE.PlaneGeometry(40,40),texMat(dirtTex('#cdb68c'),8));gr.rotation.x=-Math.PI/2;g.add(gr);
+  house(g,-5.6,-3,3,2.4,Math.PI/2,0xefe4cc,0x4a4a4a);house(g,-5.6,1.5,3,2.4,Math.PI/2,0xe8dcc0,0x55524c);house(g,5.6,-3,3,2.4,-Math.PI/2,0xefe4cc,0x4a4a4a);house(g,5.6,1.5,3,2.4,-Math.PI/2,0xe5d6b8,0x55524c);
+  [-3,1.5].forEach(z=>[-5.6,5.6].forEach(x=>R.obs.push({x,z,hw:1.25,hd:1.55})));
+  house(g,-2,-6.6,3.4,2.2,0,0xefe4cc,0x4a4a4a);house(g,2.4,-6.6,3.4,2.2,0,0xe8dcc0,0x55524c);
+  [[-4,-4.8],[4,4.5],[-3.8,4.6]].forEach(([x,z])=>{C(g,.07,.09,4,0x6b4a32,x,2,z);B(g,1,.06,.06,0x6b4a32,x,3.6,z);});
+  sign(g,'1910년 8월 29일','한일 합병 조약이 발표된 날',0,3.1,-5.2,0,'#2b3f5c','#ffffff',4.2);
+  // 사진 게시판
+  const bd=new THREE.Group();bd.position.set(-3,0,-2.2);g.add(bd);B(bd,2.4,1.5,.08,0x6b4a32,0,1.55,0);C(bd,.05,.05,1,0x6b4a32,-1,.5,0);C(bd,.05,.05,1,0x6b4a32,1,.5,0);
+  const pt=canvasTex(720,420,(c,w,h)=>{c.fillStyle='#f3ead6';c.fillRect(0,0,w,h);drawPhotos(c,w,h,true);});P(bd,2.25,1.32,pt,0,1.55,.05);
+  R.obs.push({x:-3,z:-2.2,hw:1.2,hd:.2});R.hits.push(['photos',[bd]]);
+  // 신문 가판대
+  const st=new THREE.Group();st.position.set(3,0,-2.2);g.add(st);B(st,1.8,.9,.8,0x7b5532,0,.45,0);
+  for(let i=0;i<4;i++){const n=B(st,.5,.02,.38,0xf1ede2,-.6+i*.4,.92+i*.005,0);n.rotation.y=(i-1.5)*.12;}
+  const hx=canvasTex(512,256,(c,w,h)=>{c.fillStyle='#f1ede2';c.fillRect(0,0,w,h);c.fillStyle='#1e2430';c.font='92px Jua, sans-serif';c.textAlign='center';c.fillText('號外',w/2,110);c.font='40px "Gowun Batang", serif';c.fillText('1910년 8월 29일',w/2,190);});
+  P(st,1.2,.6,hx,0,1.5,.2);C(st,.03,.03,.7,0x555,-.6,1.25,.2);C(st,.03,.03,.7,0x555,.6,1.25,.2);
+  R.obs.push({x:3,z:-2.2,hw:.95,hd:.45});R.hits.push(['paper',[st]]);},
+ stations:[{k:'photos',x:-3,z:-1,h:Math.PI,r:1.3,label:'사진 게시판',title:'세 장의 사진'},{k:'paper',x:3,z:-1,h:Math.PI,r:1.3,label:'신문 가판대',title:'호외 신문 읽기'}],
+ npc:{name:'복동이',role:'1910년 신문팔이 소년',x:0,z:-2.8,a:0,bg:'#e9f1f8',look:{skin:0xf0cfae,hair:0x1e1a16,shirt:0xe9e2d0,pants:0x8a7a62,cap:0x5a5048,h:.86},
+  lines:['호외요, 호외! 1910년 8월 29일, 한일 합병 조약이 발표됐어요!','이제 관청이나 학교 같은 공식적인 자리에서는 일본어만 써야 한대요. 우리말은 어떻게 되는 걸까요?','그런데 동네 어른들 말씀이, 몰래 한글을 연구하는 분들이 있대요. 말이 곧 겨레의 얼이라면서요.','교과서 194쪽 사진부터 보고, 195쪽을 꼼꼼히 읽고 와요. 사진 게시판과 신문 가판대에 수수께끼가 있어요!'],end:'교과서 펴러 가기'},
+ write:['194쪽 1번: 사진을 보고 알고 있는 내용을 친구와 이야기했어요','194~195쪽을 읽으며 모르는 낱말에 동그라미를 했어요'],
+ seal:'1910',clue:'말은 겨레의 얼. 통일된 체계를 세우려면 사전이 필요해요.'});
+
+/* 2. 등굣길 */
+SCENES.push({id:'road',day:1,no:'1차시',tb:'195~196',year:'1908',title:'보퉁이 선생님 오신다',place:'학교 가는 길',bg:0xcfe3ee,fog:[16,42],hemi:1,dir:.7,hx:7,hz:6,spawn:[0,4.2,Math.PI],
+ read:'195쪽 「어느 아침,」부터 196쪽 끝까지',
+ build(g,R){const gr=new THREE.Mesh(new THREE.PlaneGeometry(40,40),texMat(dirtTex('#d9c9a0'),8));gr.rotation.x=-Math.PI/2;g.add(gr);
+  const sch=new THREE.Group();sch.position.set(0,0,-6.4);g.add(sch);B(sch,9,2.6,2,0xf4f1ea,0,1.3,0);roof(sch,0,2.6,0,9,2,1.1,0xd98a32);B(sch,2.4,3.6,2.2,0xf4f1ea,0,1.8,.2);roof(sch,0,3.6,.2,2.4,2.2,1,0xd98a32);
+  for(let i=-3;i<=3;i++)if(i)B(sch,.8,.8,.04,0xe0a54a,i*1.2,1.5,1.02);B(sch,.9,1.4,.04,0x6b4a32,0,.7,1.32);
+  const clk=canvasTex(128,128,(c,w)=>{c.fillStyle='#fff';c.beginPath();c.arc(64,64,58,0,7);c.fill();c.strokeStyle='#333';c.lineWidth=6;c.stroke();c.beginPath();c.moveTo(64,64);c.lineTo(64,22);c.moveTo(64,64);c.lineTo(94,64);c.stroke();});P(sch,.6,.6,clk,0,2.9,1.33);
+  [[-6,-3.4],[-5.4,2.6],[6,-3],[5.6,3],[-6.2,-.4]].forEach(([x,z],i)=>{pine(g,x,z,1+i%2*.25);R.obs.push({x,z,r:.25});});
+  // 낮은 돌담 (★ 보퉁이 줍기 때 점프로 올라가요)
+  R.plats=[];[[-4,-1.2,1.6,.5,.6],[4.2,.8,.5,1.6,.6],[-1.8,2.4,1.2,.5,.9],[2.4,-3.6,1.4,.5,1.2]].forEach(([x,z,w,d,h])=>{const m=B(g,w*2,h,d*2,0x9a948a,x,h/2,z);R.plats.push({x,z,hw:w,hd:d,top:h});});
+  // 주시경 선생님: 초록 두루마기, 보퉁이 두 개
+  const jg=makePerson({skin:0xeac8a4,hair:0x1a1612,shirt:0xdfe8d8,pants:0xdfe8d8,coat:0x4f8a5a,h:1.04});jg.position.set(-1.2,0,-3.3);jg.rotation.y=.4;g.add(jg);
+  bundle(jg,-.42,.3,.05,.9,0xe07a34);bundle(jg,.42,.3,.05,.9,0xe07a34);R.obs.push({x:-1.2,z:-3.3,r:.45});R.hits.push(['bundle',[jg]]);
+  const nm=label('주시경',{fs:44,h:.24});nm.position.set(-1.2,2.35,-3.3);g.add(nm);
+  // 칠판
+  const bd=new THREE.Group();bd.position.set(3.4,0,-2.6);bd.rotation.y=-.3;g.add(bd);B(bd,2.2,1.4,.08,0x2f4a3f,0,1.6,0);B(bd,2.3,1.5,.06,0x6b4a32,0,1.6,-.02);C(bd,.05,.05,1,0x6b4a32,-.9,.5,0);C(bd,.05,.05,1,0x6b4a32,.9,.5,0);
+  const ct=canvasTex(660,420,(c,w,h)=>{c.fillStyle='#2f4a3f';c.fillRect(0,0,w,h);c.fillStyle='#f4f1ea';c.font='64px Jua, sans-serif';c.textAlign='center';c.fillText('언문 → 국문 → ?',w/2,120);c.font='150px Jua, sans-serif';c.fillText('한 글',w/2,310);});P(bd,2,1.27,ct,0,1.6,.05);
+  R.obs.push({x:3.4,z:-2.6,hw:1.1,hd:.3});R.hits.push(['name',[bd]]);
+  // ★ 흩어진 보퉁이
+  R.items=[[-4,-1.2,.6],[4.2,.8,.6],[-1.8,2.4,.9],[2.4,-3.6,1.2],[0,1,0],[-5,3.6,0]].map(([x,z,y])=>{const m=bundle(g,x,y,z,.9,0xe07a34);m.visible=false;return {m,x,z,y,got:false};});
+  const ss=new THREE.Group();ss.position.set(-3.6,0,3.6);g.add(ss);C(ss,.05,.05,1.4,0x6b4a32,0,.7,0);P(ss,1.3,.5,canvasTex(520,200,(c,w,h)=>{c.fillStyle='#fff4d6';roundRect(c,0,0,w,h,24);c.fill();c.fillStyle='#7a5200';c.font='70px Jua, sans-serif';c.textAlign='center';c.textBaseline='middle';c.fillText('★ 보퉁이 줍기',w/2,h/2);}),0,1.5,.05);R.hits.push(['bgame',[ss]]);
+  R.ch={th:[22,38],start(){R.items.forEach(it=>{it.got=false;it.m.visible=true;});},check(){let left=0;R.items.forEach(it=>{if(it.got)return;if(Math.hypot(pos.x-it.x,pos.z-it.z)<.6&&Math.abs(posY-it.y)<.7){it.got=true;it.m.visible=false;sfx.pick();}else left++;});return left===0;},
+   stop(){R.items.forEach(it=>it.m.visible=false);},status(){return '보퉁이 '+R.items.filter(i=>i.got).length+' / '+R.items.length;}};
+  R.tick=(dt,t)=>{if(!reduceMotion)R.items.forEach((it,i)=>{if(it.m.visible){it.m.rotation.y=t*1.5+i;it.m.position.y=it.y+.08+Math.sin(t*3+i)*.06;}});};},
+ stations:[{k:'bundle',x:-.5,z:-2.2,h:Math.PI+.5,r:1.3,label:'보퉁이 선생님',title:'보퉁이 선생님은 누구?'},{k:'name',x:3,z:-1.4,h:Math.PI-.3,r:1.3,label:'이름 칠판',title:'우리글의 이름, 한글'},{k:'bgame',x:-3.6,z:4.4,h:Math.PI,r:1.2,label:'★ 보퉁이 줍기',title:'★ 도전 · 보퉁이 줍기',opt:true}],
+ npc:{name:'순이',role:'등굣길 학생',x:1,z:-.6,a:0,bg:'#f6ecd8',look:{skin:0xf3d6bb,hair:0x1e1a16,shirt:0x4f8a5a,pants:0x1e2430,skirt:0x1e2430,braid:1,h:.9},
+  lines:['저기 보퉁이 선생님 오신다! 보자기에 싼 책 꾸러미를 낑낑대며 들고 다니셔.','집안 형편이 넉넉하지 않은데도, 한글 연구에 필요한 책이라면 아낌없이 사신대.','선생님이 우리글의 이름을 새로 지으셨대. ‘한글’! 그 ‘한’에는 뜻이 여러 개 들어 있다던데?','195쪽 「어느 아침,」부터 196쪽 끝까지 꼼꼼히 읽고 와. 모르는 낱말은 쪽 아래 ◆ 풀이를 봐!'],end:'교과서 펴러 가기'},
+ write:['196쪽 「생각하며 읽기」: 모르는 낱말의 뜻을 알아낸 방법을 짝에게 말했어요','196쪽에서 ‘한글’이라는 이름에 담긴 뜻에 밑줄을 그었어요'],
+ seal:'한글',clue:'‘한글’은 크고 바른 글, 첫째가는 글, 우리 겨레의 글.'});
+
+/* 3. 말모이 작업실 */
+SCENES.push({id:'malmoi',day:1,no:'1차시',tb:'197',year:'1914',title:'말을 모아 놓았다',place:'말모이 작업실',bg:0x3a2c22,fog:[12,30],hemi:.65,dir:.3,hx:5,hz:4.5,spawn:[0,3,Math.PI],
+ read:'197쪽 전체',
+ build(g,R){room(g,5,4.5,texMat(woodTex(),3),0xe9dcc0);
+  const n0=g.children.length;table(g,0,-1.2,2.6,1.4,0x8a6a4a);R.hits.push(['cards',g.children.slice(n0)]);R.obs.push({x:0,z:-1.2,hw:1.3,hd:.7});
+  for(let i=0;i<7;i++){const p=B(g,.32,.005,.42,0xf6efdc,-1+i*.33,.87,-1.2+(i%2)*.25);p.rotation.y=(Math.random()-.5)*.6;}
+  bundle(g,.9,.86,-1.5,1);bundle(g,.9,1.02,-1.5,.95);C(g,.05,.06,.12,0x222,-.8,.92,-.9);
+  [-3.8,3.8].forEach(x=>{B(g,.5,2.6,2.4,0x6b4a32,x,1.3,-2.6);for(let k=0;k<4;k++)for(let j=0;j<6;j++)B(g,.36,.42,.12,[0x8a3a2a,0x2f4a3f,0xc9a46a,0x3d5a80][(j+k)%4],x+(x<0?.08:-.08),.4+k*.6,-3.5+j*.36);R.obs.push({x,z:-2.6,hw:.3,hd:1.2});});
+  const cal=canvasTex(400,520,(c,w,h)=>{c.fillStyle='#fffaf0';c.fillRect(0,0,w,h);c.fillStyle='#c0402f';c.fillRect(0,0,w,110);c.fillStyle='#fff';c.font='76px Jua, sans-serif';c.textAlign='center';c.fillText('1914',w/2,82);
+   c.fillStyle='#1e2430';c.font='44px Jua, sans-serif';c.fillText('7월',w/2,170);c.strokeStyle='#d3d9e2';c.lineWidth=2;for(let i=0;i<5;i++)for(let j=0;j<7;j++)c.strokeRect(30+j*49,200+i*58,49,58);c.fillStyle='#c0402f';c.font='34px Jua, sans-serif';c.fillText('27',30+5*49+24,200+3*58+42);});
+  const cp=P(g,1,1.3,cal,-2.2,2,-4.45);R.hits.push(['calendar',[cp]]);
+  sign(g,'『말모이』 원고실','말을 모아 놓았다',1.6,3.2,-4.45,0,'#2b3f5c','#ffffff',3.2);
+  const lamp=new THREE.PointLight(0xffcf8a,1.3,12);lamp.position.set(0,3,-1);g.add(lamp);C(g,.25,.4,.25,0xf1e0b0,0,3.5,-1,{emissive:0x553a10});},
+ stations:[{k:'cards',x:0,z:.1,h:Math.PI,r:1.3,label:'원고 책상',title:'말모이 원고 책상'},{k:'calendar',x:-2.2,z:-3.2,h:Math.PI,r:1.3,label:'1914년 달력',title:'1914년, 그해 일'}],
+ npc:{name:'김 군',role:'주시경의 제자',x:2.4,z:-.6,a:-.6,bg:'#f3e6cf',look:{skin:0xefcdaa,hair:0x1e1a16,shirt:0xe9e2d0,pants:0x6b6052,coat:0x8a7a62,h:.98},
+  lines:['여기는 선생님과 제자들이 사전 원고를 만드는 방이에요. 사전 이름은 『말모이』, 말을 모아 놓았다는 뜻이지요.','세상의 낱말을 하나하나 찾아 모으고, 뜻을 쉽게 풀어 쓰는 일… 시간도 돈도 인내도 아주 많이 들어요.','1914년, 선생님은 원고를 가지고 외국으로 나가 사전을 완성하려 하셨어요. 그런데…','197쪽을 끝까지 읽고 와 주세요. 그해에 무슨 일이 있었는지, 달력에 순서대로 붙여 주세요.'],end:'교과서 펴러 가기'},
+ write:['197쪽에서 『말모이』라는 이름의 뜻에 밑줄을 그었어요','197쪽에서 『말모이』가 빛을 보지 못한 까닭을 찾아 물결 밑줄을 그었어요'],
+ seal:'말모이',clue:'우리나라 최초의 한글 사전 원고 『말모이』. 빛을 보지 못하고 묻혔어요.'});
+
+/* 4. 조선어학회 */
+SCENES.push({id:'society',day:1,no:'1차시',tb:'198',year:'1931',title:'목표는 두 가지',place:'조선어학회 사무실',bg:0x2c3444,fog:[12,32],hemi:.75,dir:.35,hx:6,hz:5,spawn:[0,3.4,Math.PI],
+ read:'198쪽 전체',
+ build(g,R){room(g,6,5,texMat(woodTex('#6e5a44','#64503c'),3),0xd8d2c2);
+  for(let j=0;j<5;j++){B(g,1.6,3,.5,0x5a4632,-4.2+j*2.1,1.5,-4.7);for(let k=0;k<5;k++)for(let m=0;m<4;m++)B(g,.34,.44,.3,[0xe9dcc0,0xc9b48c,0xf6efdc][(j+k+m)%3],-4.8+j*2.1+m*.38,.35+k*.58,-4.55);}
+  R.obs.push({x:0,z:-4.6,hw:5.6,hd:.4});
+  [[-2.4,-1.4],[2.4,-1.4],[-2.4,1.2]].forEach(([x,z])=>{table(g,x,z,2.4,1.1,0x7a5a3e);R.obs.push({x,z,hw:1.2,hd:.55});bundle(g,x-.5,.86,z,1);bundle(g,x+.4,.86,z+.1,.9);bundle(g,x+.4,1.0,z+.1,.85);});
+  const bb=new THREE.Group();bb.position.set(-5.9,0,-.6);bb.rotation.y=Math.PI/2;g.add(bb);B(bb,3,1.6,.08,0x2f4a3f,0,1.8,0);
+  const bt=canvasTex(900,480,(c,w,h)=>{c.fillStyle='#2f4a3f';c.fillRect(0,0,w,h);c.fillStyle='#f4f1ea';c.font='70px Jua, sans-serif';c.textAlign='left';c.fillText('조선어학회의 목표',60,100);c.font='60px Jua, sans-serif';
+   c.fillText('첫째, ',60,240);c.fillText('둘째, ',60,380);c.strokeStyle='rgba(244,241,234,.5)';c.setLineDash([16,12]);c.lineWidth=4;c.beginPath();c.moveTo(240,250);c.lineTo(840,250);c.moveTo(240,390);c.lineTo(840,390);c.stroke();});
+  const bp=P(bb,2.85,1.52,bt,0,1.8,.05);R.hits.push(['goals',[bp]]);
+  sign(g,'조선어학회','1921 조선어연구회 → 1931 조선어학회',0,3.4,-4.4,0,'#2b3f5c','#ffffff',4);
+  const letter=B(g,.5,.02,.36,0xf6efdc,2.4,.87,-1.4);R.hits.push(['crisis',[letter]]);
+  const lamp=new THREE.PointLight(0xfff0d0,1,14);lamp.position.set(0,3.4,0);g.add(lamp);},
+ stations:[{k:'goals',x:-4.4,z:-.6,h:-Math.PI/2,r:1.3,label:'목표 칠판',title:'조선어학회의 목표'},{k:'crisis',x:2.4,z:-.3,h:Math.PI,r:1.3,label:'1938년 소식',title:'1938년의 위기'}],
+ npc:{name:'이 선생',role:'조선어학회 회원',x:2.6,z:1.6,a:-.4,bg:'#e4e9f1',look:{skin:0xefcdaa,hair:0x2a2420,shirt:0xf4f1ea,pants:0x2b3f5c,coat:0x3a4a62,glasses:1,h:1},
+  lines:['주시경 선생님의 노력은 헛되지 않았어요. 선생님께 한글을 배운 제자들이 연구를 이어 갔지요.','1921년에 ‘조선어연구회’를 세웠고, 1931년에는 ‘조선어학회’로 이름을 바꾸었어요.','우리에게는 목표가 두 가지 있어요. 칠판에 적어 두었는데, 글자가 지워졌네요!','198쪽을 꼼꼼히 읽고 와서 칠판을 채워 주세요. 1938년에 찾아온 위기도 알아봐 주고요.'],end:'교과서 펴러 가기'},
+ write:['198쪽에서 조선어학회의 목표 두 가지에 ①, ② 번호를 붙였어요','198쪽 「생각하며 읽기」: 내용이 이해하기 어려울 때 해결한 방법을 짝에게 말했어요'],
+ seal:'학회',clue:'문맹 퇴치 운동과 한글 사전 편찬. 민중이 조선어학회를 지지했어요.'});
+
+/* 5. 1942 기차 */
+SCENES.push({id:'train',day:1,no:'1차시',tb:'199',year:'1942',title:'일기장 한 줄',place:'1942년 함흥 가는 기차',bg:0x2a2f3a,fog:[10,28],hemi:.7,dir:.3,hx:1.9,hz:8,spawn:[0,6.6,Math.PI],
+ read:'199쪽 전체',
+ build(g,R){room(g,1.9,8,texMat(woodTex('#5a4632','#4e3c2a'),4),0x6b3a2a,{wh:3});
+  const ceil=new THREE.Mesh(new THREE.PlaneGeometry(3.8,16),mat(0xe9dcc0));ceil.rotation.x=Math.PI/2;ceil.position.y=3;g.add(ceil);
+  const land=canvasTex(1024,256,(c,w,h)=>{const gr=c.createLinearGradient(0,0,0,h);gr.addColorStop(0,'#9fc3dc');gr.addColorStop(1,'#e8e0c8');c.fillStyle=gr;c.fillRect(0,0,w,h);
+   for(let i=0;i<9;i++){c.fillStyle=i%2?'#7d9a6a':'#6a885a';c.beginPath();c.ellipse(i*120+40,h*.85,140,70+i%3*20,0,0,7);c.fill();}
+   for(let i=0;i<14;i++){c.fillStyle='#4e6b44';c.fillRect(i*75+20,h*.6,8,40);c.beginPath();c.arc(i*75+24,h*.58,18,0,7);c.fill();}});
+  land.wrapS=THREE.RepeatWrapping;R.land=land;
+  for(let i=-3;i<=3;i++){[-1,1].forEach(s=>{const w=new THREE.Mesh(new THREE.PlaneGeometry(1.4,.9),new THREE.MeshBasicMaterial({map:land,toneMapped:false}));w.position.set(s*1.88,1.7,i*2.1);w.rotation.y=-s*Math.PI/2;g.add(w);
+    const seat=B(g,.9,.5,.7,0x2f4a6b,s*1.35,.45,i*2.1-.5);B(g,.9,.8,.12,0x2f4a6b,s*1.35,.9,i*2.1-.85);R.obs.push({x:s*1.35,z:i*2.1-.6,hw:.45,hd:.5});});}
+  const diary=new THREE.Group();diary.position.set(-1.35,.72,-.5);g.add(diary);B(diary,.36,.06,.26,0x8a3a2a,0,0,0);R.hits.push(['diary',[diary]]);
+  const dl=label('일기장',{fs:40,h:.2,bg:'rgba(192,64,47,.9)',fg:'#fff'});dl.position.set(-1.35,1.1,-.5);g.add(dl);
+  sign(g,'1942년','함흥으로 가는 기차 안',0,2.5,-7.9,0,'#2b3f5c','#ffffff',3.2);
+  R.tick=(dt)=>{if(!reduceMotion)R.land.offset.x=(R.land.offset.x+dt*.08)%1;};
+  const lamp=new THREE.PointLight(0xffe2a8,1,10);lamp.position.set(0,2.6,0);g.add(lamp);},
+ stations:[{k:'diary',x:-.4,z:-.5,h:-Math.PI/2,r:1.2,label:'일기장',title:'압수된 일기장'},{k:'think',x:.4,z:-4.2,h:Math.PI/2,r:1.2,label:'창밖 생각하기',title:'생각하며 읽기'}],
+ npc:{name:'함흥 학생',role:'1942년 기차 안의 학생',x:.3,z:3,a:Math.PI,bg:'#e4e9f1',look:{skin:0xf3d6bb,hair:0x1e1a16,shirt:0x1e2430,pants:0x1e2430,skirt:0x1e2430,braid:1,h:.9},
+  lines:['1942년, 함흥으로 가는 기차 안이에요. 친구들과 우리말로 이야기했다는 까닭만으로 경찰에게 붙잡힌 학생들이 있었어요.','경찰은 학생들의 집까지 뒤져 일기장을 가져갔어요. 거기 적힌 한 줄이 아주 큰 사건으로 번졌지요.','199쪽을 꼼꼼히 읽고, 일기장에서 시작된 일을 순서대로 맞혀 주세요.','그리고 창가에서 생각해 봐요. 사전을 만드는 일이 왜 독립운동과 이어질까요?'],end:'교과서 펴러 가기'},
+ write:['199쪽 「생각하며 읽기」: 사전 편찬과 독립운동이 연결되는 까닭을 여백에 한 줄 썼어요','199쪽에서 조선어학회 탄압이 시작된 단서(일기장)에 밑줄을 그었어요'],
+ seal:'1942',clue:'일기장 한 줄을 빌미로 회원들이 붙잡히고 원고를 모두 빼앗겼어요.'});
+
+/* 6. 서울역 창고 */
+SCENES.push({id:'station',day:1,no:'1차시',tb:'200',year:'1945',title:'상자 속 원고',place:'1945년 서울역 창고',bg:0x23262c,fog:[12,34],hemi:.55,dir:.25,hx:8,hz:7,spawn:[-3,5.4,Math.PI],
+ read:'199쪽 「1945년 8월 15일,」부터 200쪽 끝까지',
+ build(g,R){room(g,8,7,mat(0x6b665e,{roughness:1}),0x3d5a4a,{wh:5});
+  const door=new THREE.Mesh(new THREE.PlaneGeometry(2.2,3.2),new THREE.MeshBasicMaterial({color:0xfff2b8}));door.position.set(-2,1.6,-6.98);g.add(door);
+  const dl=new THREE.SpotLight(0xfff0c0,1.6,22,.6,.5);dl.position.set(-2,2.4,-6.6);dl.target.position.set(-3,0,0);g.add(dl,dl.target);
+  R.plats=[];const crate=(x,z,s,y)=>{y=y||0;const m=B(g,s,s,s,crateM,x,y+s/2,z);R.plats.push({x,z,hw:s/2,hd:s/2,top:y+s});return m;};
+  // 벽가 상자 더미 (장식)
+  [[-6.6,-5.6,1.2],[-5.3,-5.8,1],[-6.6,-4.3,1],[-6.8,2,1.2],[-6.6,3.4,1],[6.8,4.6,1.1],[-.4,-6.2,1],[1,-6.1,1.1]].forEach(([x,z,s])=>crate(x,z,s));crate(-6.6,-5.6,1,1.2);
+  // ★ 계단처럼 쌓인 상자 (꼭대기에 빛나는 상자)
+  crate(3.6,0,1);crate(4.8,-1,1);crate(4.8,-1,1,1);crate(5.9,-2.3,1.1);crate(5.9,-2.3,1,1.1);crate(5.9,-2.3,.9,2.1);crate(6.6,-4,1.2);crate(6.6,-4,1.2,1.2);crate(6.6,-4,1.1,2.4);crate(5.2,-5.4,1.2);crate(5.2,-5.4,1.1,1.2);crate(5.2,-5.4,1,2.3);crate(5.2,-5.4,1,3.3);
+  const gold=B(g,.6,.4,.5,0xe9c46a,5.2,4.5,-5.4,{emissive:0x6a4a00});R.gold=gold;R.goldL=new THREE.PointLight(0xffd27a,0,6);R.goldL.position.set(5.2,5,-5.4);g.add(R.goldL);
+  // 원고 상자
+  const big=new THREE.Group();big.position.set(-2.6,0,-2.4);g.add(big);B(big,1.8,1,1.2,crateM,0,.5,0);R.lid=new THREE.Group();R.lid.position.set(0,1,-.6);big.add(R.lid);B(R.lid,1.86,.1,1.26,crateM,0,.05,.6);
+  for(let i=0;i<5;i++)bundle(big,-.5+i*.25,.86,(i%2)*.2-.1,.9);R.obs.push({x:-2.6,z:-2.4,hw:.9,hd:.6});R.hits.push(['box',[big]]);
+  if(S.done.box)R.lid.rotation.x=-1.9;
+  const ss=new THREE.Group();ss.position.set(2.4,0,1.6);g.add(ss);C(ss,.05,.05,1.4,0x6b4a32,0,.7,0);P(ss,1.3,.5,canvasTex(520,200,(c,w,h)=>{c.fillStyle='#fff4d6';roundRect(c,0,0,w,h,24);c.fill();c.fillStyle='#7a5200';c.font='66px Jua, sans-serif';c.textAlign='center';c.textBaseline='middle';c.fillText('★ 상자 오르기',w/2,h/2);}),0,1.5,.05);R.hits.push(['climb',[ss]]);
+  sign(g,'1945년 9월 8일','서울역 창고',2,3.9,-6.95,0,'#2b3f5c','#ffffff',3.6);
+  R.ch={th:[20,40],start(){R.goldL.intensity=1.4;},check(){return Math.hypot(pos.x-5.2,pos.z+5.4)<.8&&posY>4.2;},stop(){R.goldL.intensity=0;},status(){return '꼭대기 빛나는 상자까지!';}};
+  R.tick=(dt,t)=>{if(!reduceMotion)gold.rotation.y=t;};},
+ stations:[{k:'box',x:-2.6,z:-1.2,h:Math.PI,r:1.3,label:'커다란 상자',title:'상자를 열어 보자'},{k:'climb',x:2.4,z:2.4,h:Math.PI,r:1.2,label:'★ 상자 오르기',title:'★ 도전 · 상자 오르기',opt:true}],
+ npc:{name:'역장',role:'1945년 서울역 역장',x:-.6,z:-.4,a:-.3,bg:'#e9e4d8',look:{skin:0xeac8a4,hair:0x2a2420,shirt:0x2b3f5c,pants:0x2b3f5c,coat:0x24344c,cap:0x1e2a3c,h:1.04},
+  lines:['1945년 8월 15일, 드디어 광복을 맞았지요. 조선어학회 회원들은 가장 먼저 『큰사전』 원고를 찾아 나섰다고 해요.','하지만 어디에서도 원고가 나오지 않았대요. 회원들 마음이 얼마나 타들어 갔을까요.','오늘은 1945년 9월 8일. 주인 잃은 짐을 정리하는데, 저 구석에 커다란 상자 하나가 있네요.','199쪽 아래부터 200쪽 끝까지 읽고 와서 상자를 열어 보세요. 시간이 남으면 ★ 상자 오르기도 해 봐요!'],end:'교과서 펴러 가기'},
+ write:['199~200쪽 「큰사전이 필요하다」를 끝까지 읽었어요','200쪽에서 원고를 찾은 날짜와 장소에 동그라미를 했어요'],
+ seal:'1945',clue:'1945년 9월 8일, 서울역 창고에서 『큰사전』 원고 수만 장을 찾았어요!'});
+
+/* 7~10. 1957 큰사전 완간 기념관 */
+function museum(g,hx,hz,accent,title,sub){room(g,hx,hz,texMat(woodTex('#b08a5e','#a27e54'),3),0xf3efe6,{wh:4.4});
+  B(g,hx*2,.3,.05,accent,0,.15,-hz+.03);B(g,hx*2,.08,.05,accent,0,3.2,-hz+.03);
+  sign(g,title,sub,0,3.7,-hz+.04,0,'#'+new THREE.Color(accent).getHexString(),'#ffffff',Math.min(4.4,hx*1.4));
+  const l=new THREE.PointLight(0xfff6e6,1.1,18);l.position.set(0,3.8,0);g.add(l);}
+function plinth(g,x,z,col){B(g,.9,1,.9,0xe9e4d8,x,.5,z);B(g,1,.06,1,col||0xc0402f,x,1.02,z);}
+function dictBooks(g,x,y,z){for(let i=0;i<6;i++){const b=B(g,.16,.62,.46,0x2f4a3f,x-.45+i*.18,y+.31,z);const t=B(g,.02,.5,.3,0xd9a441,x-.45+i*.18,y+.31,z+.231);t.scale.set(1,1,.05);}}
+
+SCENES.push({id:'words',day:2,no:'2차시',tb:'201',year:'낱말',title:'낱말 풀이 방',place:'기념관 · 낱말 풀이 방',bg:0x3a3326,fog:[14,34],hemi:.95,dir:.5,hx:6,hz:5,spawn:[0,3.6,Math.PI],
+ build(g,R){museum(g,6,5,0xc0402f,'1957 『조선말 큰사전』 완간','기념관 1관 · 낱말 풀이 방');
+  plinth(g,0,-1.8);dictBooks(g,0,1.05,-1.8);R.obs.push({x:0,z:-1.8,hw:.5,hd:.5});R.hits.push(['match',[g.children[g.children.length-1]]]);
+  R.cards=[];['문맹','절호','천금','직결되다','섣부르다'].forEach((w,i)=>{const sp=label(w,{fs:56,h:.42,bg:'rgba(251,245,230,.96)',fg:'#c0402f'});sp.position.set(-3+i*1.5,2.2+(i%2)*.35,-3);g.add(sp);R.cards.push(sp);});
+  const fb=new THREE.Group();fb.position.set(4.2,0,-1);fb.rotation.y=-.5;g.add(fb);B(fb,1.8,1.2,.08,0xd9a441,0,1.5,0);C(fb,.05,.05,.9,0x6b4a32,0,.45,0);
+  P(fb,1.7,1.1,canvasTex(600,390,(c,w,h)=>{c.fillStyle='#fff7da';c.fillRect(0,0,w,h);c.fillStyle='#7a5200';c.font='80px Jua, sans-serif';c.textAlign='center';c.fillText('★ 낱말 번개',w/2,170);c.font='40px Jua, sans-serif';c.fillText('◆ 낱말 6개, 빠르게!',w/2,270);}),0,1.5,.05);R.obs.push({x:4.2,z:-1,hw:.9,hd:.3});R.hits.push(['flash',[fb]]);
+  R.tick=(dt,t)=>{if(!reduceMotion)R.cards.forEach((c,i)=>c.position.y=2.2+(i%2)*.35+Math.sin(t*1.4+i)*.1);};},
+ stations:[{k:'match',x:0,z:-.6,h:Math.PI,r:1.3,label:'낱말 카드 붙이기',title:'낱말 뜻 맞히기'},{k:'flash',x:3.6,z:.1,h:Math.PI-.5,r:1.2,label:'★ 낱말 번개',title:'★ 도전 · 낱말 번개',opt:true}],
+ npc:{name:'정 해설사',role:'큰사전 기념관 해설사',x:-2.6,z:-1,a:.4,bg:'#fde8e2',look:{skin:0xf3d6bb,hair:0x3a2a20,shirt:0xc0402f,pants:0x2b3f5c,skirt:0x2b3f5c,h:.98},
+  lines:['어서 와요! 여기는 1957년, 『조선말 큰사전』 여섯 권이 모두 나온 것을 기념하는 전시관이에요.','1947년에 첫째 권이 나오고, 전쟁의 상흔 속에서도 편찬을 이어 10년 만에 완간되었지요.','첫 방은 낱말 풀이 방이에요. 떠다니는 낱말 카드를 알맞은 뜻에 붙여 주세요.','교과서 201쪽 3번을 펴 두고 시작해요!'],end:'201쪽 펴기'},
+ write:['201쪽 3번: 빈칸 4개에 알맞은 낱말을 썼어요'],
+ seal:'낱말',clue:'문맹 · 천금 · 섣부르다 · 절호. 낱말의 뜻을 알면 글이 또렷해져요.'});
+
+SCENES.push({id:'interview',day:2,no:'2차시',tb:'201',year:'취재',title:'기자의 취재 수첩',place:'기념관 · 증언의 방',bg:0x2c3444,fog:[14,34],hemi:.95,dir:.5,hx:6,hz:5,spawn:[0,3.6,Math.PI],
+ build(g,R){museum(g,6,5,0x2b3f5c,'증언의 방','기념관 2관 · 그때 사람들의 이야기');
+  const who=[['순이','등굣길 학생','#4f8a5a',-3.4],['이 선생','조선어학회 회원','#3a4a62',0],['회원들','원고를 찾은 날','#c0402f',3.4]];
+  who.forEach(([n,r,col,x],i)=>{const fr=new THREE.Group();fr.position.set(x,0,-4.95);g.add(fr);B(fr,1.7,2,.08,0x6b4a32,0,2.1,0);
+   P(fr,1.5,1.8,canvasTex(400,480,(c,w,h)=>{c.fillStyle='#f6efdc';c.fillRect(0,0,w,h);c.fillStyle=col;c.beginPath();c.ellipse(w/2,h*.95,150,140,0,0,7);c.fill();c.fillStyle='#efcdaa';c.beginPath();c.arc(w/2,h*.45,90,0,7);c.fill();c.fillStyle='#1e1a16';c.beginPath();c.arc(w/2,h*.41,95,Math.PI*1.03,Math.PI*1.97);c.fill();
+    c.fillStyle='#2b221c';[-1,1].forEach(s=>{c.beginPath();c.arc(w/2+s*32,h*.46,7,0,7);c.fill();});c.fillStyle='#1e2430';c.font='44px Jua, sans-serif';c.textAlign='center';c.fillText(n,w/2,h*.14);}),0,2.1,.05);
+   plinth(g,x,-3.6,0x2b3f5c);R.obs.push({x,z:-3.6,hw:.5,hd:.5});R.hits.push(['q'+(i+1),[fr]]);});},
+ stations:[{k:'q1',x:-3.4,z:-2.4,h:Math.PI,r:1.2,label:'(1) 보퉁이 선생님',title:'(1) 보퉁이 선생님'},{k:'q2',x:0,z:-2.4,h:Math.PI,r:1.2,label:'(2) 조선어학회의 목표',title:'(2) 조선어학회의 목표'},{k:'q3',x:3.4,z:-2.4,h:Math.PI,r:1.2,label:'(3) 원고를 찾은 날',title:'(3) 원고를 찾은 날의 마음'}],
+ npc:{name:'한 기자',role:'신문 기자',x:-1.8,z:1.4,a:.5,bg:'#e4e9f1',look:{skin:0xefcdaa,hair:0x2a2420,shirt:0xf4f1ea,pants:0x5a5048,fedora:0x5a4632,coat:0x8a7a62,h:1},
+  lines:['저는 신문 기자예요. 큰사전 이야기를 기사로 쓰려고 이 방에 왔어요.','벽에 걸린 세 사람에게 물어볼 게 있어요. 교과서 201쪽 4번의 (1), (2), (3)이에요.','하나씩 취재하고 나서, 알아낸 것을 교과서에 내 말로 써 주세요. 기사는 정확해야 하니까 꼼꼼히요!'],end:'취재 시작'},
+ write:['201쪽 4번 (1) 주시경이 ‘보퉁이 선생님’으로 불린 까닭을 썼어요','201쪽 4번 (2) 조선어학회의 목표를 썼어요','201쪽 4번 (3) 원고를 찾았을 때 회원들의 마음을 썼어요'],
+ seal:'취재',clue:'보퉁이 선생님, 두 가지 목표, 원고를 찾은 날의 벅찬 마음.'});
+
+const TL=[['1908','주시경이 ‘국어연구학회’를 만들어 제자들과 사전을 만들기 시작했다'],['1910','8월 29일, 한일 합병 조약이 발표되었다'],['1914','7월 27일 주시경이 생을 마쳤다'],['1921','‘조선어연구회’가 세워졌다'],['1931','‘조선어학회’로 이름을 바꾸고 사전 편찬을 이어 갔다'],['1942','조선어학회가 편찬하던 사전 원고를 모두 압수당했다'],['1945','9월 8일, 서울역 창고에서 『큰사전』 원고를 찾았다'],['1957','『조선말 큰사전』이 완간되었다']];
+SCENES.push({id:'timeline',day:2,no:'2차시',tb:'202',year:'연표',title:'시간의 회랑',place:'기념관 · 연표 회랑',bg:0x3a3326,fog:[14,36],hemi:.95,dir:.5,hx:3,hz:9,spawn:[0,7.6,Math.PI],
+ build(g,R){museum(g,3,9,0x2e6b4f,'시간의 회랑','기념관 3관');
+  TL.forEach(([y],i)=>{const s=i%2?1:-1,z=6-i*1.75;C(g,.22,.26,3,0xe9e4d8,s*2.5,1.5,z);const l=label(y,{fs:60,h:.4,bg:'rgba(46,107,79,.92)',fg:'#fff'});l.position.set(s*2.1,2.6,z);g.add(l);R.obs.push({x:s*2.5,z,r:.3});});
+  B(g,.08,.02,16,0xd9a441,0,.01,0);
+  plinth(g,0,4.4,0x2e6b4f);R.obs.push({x:0,z:4.4,hw:.5,hd:.5});R.hits.push(['order',[g.children[g.children.length-1]]]);
+  plinth(g,0,-6.4,0xc0402f);dictBooks(g,0,1.05,-6.4);R.obs.push({x:0,z:-6.4,hw:.5,hd:.5});R.hits.push(['blanks',[g.children[g.children.length-1]]]);},
+ stations:[{k:'order',x:0,z:5.6,h:Math.PI,r:1.2,label:'사건 카드 줄 세우기',title:'사건을 차례대로'},{k:'blanks',x:0,z:-5.2,h:Math.PI,r:1.2,label:'연표 빈칸 채우기',title:'202쪽 연표 빈칸'}],
+ npc:{name:'연표 안내원',role:'시간의 회랑 안내원',x:1.2,z:6.4,a:-.6,bg:'#e0f0e6',look:{skin:0xf0cfae,hair:0x1e1a16,shirt:0x2e6b4f,pants:0x2b3f5c,cap:0x2e6b4f,h:.96},
+  lines:['여기는 시간의 회랑이에요. 기둥마다 연도가 적혀 있지요.','먼저 사건 카드를 일어난 차례대로 줄 세워 봐요. 그다음 회랑 끝에서 202쪽 연표의 빈칸을 채워요.','기억이 안 나면 194~200쪽을 다시 넘겨 봐도 돼요. 다시 읽는 것도 아주 좋은 읽기 방법이에요!'],end:'회랑 걷기'},
+ write:['202쪽 (4) 연표의 빈칸 5개를 모두 채웠어요'],
+ seal:'연표',clue:'1908년부터 1957년까지, 사전 하나에 쉰 해 가까운 노력이 담겼어요.'});
+
+SCENES.push({id:'infer',day:2,no:'2차시',tb:'203',year:'추론',title:'추론 탐정 방',place:'기념관 · 추론 탐정 방',bg:0x2a2a38,fog:[14,34],hemi:.95,dir:.5,hx:6,hz:5,spawn:[0,3.6,Math.PI],
+ build(g,R){museum(g,6,5,0x5b4a8a,'추론 탐정 방','기념관 4관 · 단서 + 내 경험과 지식');
+  [['글 내용','#8a7ab8',-3.4],['질문','#5b4a8a',0],['추론한 내용','#3d3070',3.4]].forEach(([t,col,x],i)=>{const bd=new THREE.Group();bd.position.set(x,0,-4.9);g.add(bd);
+   P(bd,2.6,1.8,canvasTex(600,420,(c,w,h)=>{c.fillStyle='#fbf8ff';c.fillRect(0,0,w,h);c.strokeStyle='#c9c0e6';c.lineWidth=2;for(let k=1;k<14;k++){c.beginPath();c.moveTo(k*w/14,0);c.lineTo(k*w/14,h);c.stroke();}for(let k=1;k<10;k++){c.beginPath();c.moveTo(0,k*h/10);c.lineTo(w,k*h/10);c.stroke();}
+    c.fillStyle=col;roundRect(c,40,30,260,74,20);c.fill();c.fillStyle='#fff';c.font='46px Jua, sans-serif';c.textAlign='center';c.textBaseline='middle';c.fillText(t,170,68);if(i<2){c.fillStyle=col;c.beginPath();c.moveTo(w-10,h/2);c.lineTo(w-60,h/2-40);c.lineTo(w-60,h/2+40);c.fill();}}),0,2,.05);});
+  const desk=new THREE.Group();desk.position.set(0,0,-1);g.add(desk);table(desk,0,0,2.4,1.1,0x5a4632);const mg=C(desk,.16,.16,.02,0x9ad0ff,.4,.88,0,{transparent:true,opacity:.6});C(desk,.02,.02,.26,0x5a3a24,.58,.88,.14).rotation.x=Math.PI/2;bundle(desk,-.6,.86,0,.9);R.obs.push({x:0,z:-1,hw:1.2,hd:.55});
+  R.hits.push(['row2',[desk]]);},
+ stations:[{k:'row1',x:-3.4,z:-3.2,h:Math.PI,r:1.2,label:'글 내용과 추론 구별',title:'글에 있는 것? 추론한 것?'},{k:'row2',x:0,z:.3,h:Math.PI,r:1.3,label:'둘째 줄 추론하기',title:'203쪽 둘째 줄'},{k:'row3',x:3.4,z:-3.2,h:Math.PI,r:1.2,label:'셋째 줄 질문 만들기',title:'203쪽 셋째 줄'}],
+ npc:{name:'추리 박사',role:'추론 탐정 방 주인',x:-2.4,z:1.2,a:.5,bg:'#ece8f8',look:{skin:0xefcdaa,hair:0x8a8a8a,shirt:0x5b4a8a,pants:0x2b2440,fedora:0x3d3070,coat:0x5b4a8a,glasses:1,h:1},
+  lines:['글에 다 쓰여 있지 않아도, 단서를 모으면 알아낼 수 있어요. 그게 바로 추론이지요.','추론할 때는 글에서 찾을 수 있는 단서를 확인하거나, 글과 관련 있는 내 경험이나 지식을 떠올려요.','교과서 203쪽 5번 표를 펴요. 글 내용을 보고 질문을 만들고, 단서로 추론해 볼까요?'],end:'203쪽 펴기'},
+ write:['203쪽 5번 둘째 줄 빈칸을 썼어요','203쪽 5번 셋째 줄의 「질문」과 「추론한 내용」을 썼어요'],
+ seal:'추론',clue:'단서 + 내 경험과 지식 = 추론. 이제 나도 추론하며 읽는 독자!'});
+
+/* 그림: 194쪽 사진 세 장을 그린 그림 (교과서 사진을 옮기지 않고 따로 그려요) */
+function drawPhotos(c,w,h,nolabel){const fw=w/3;
+  for(let i=0;i<3;i++){const x=i*fw+14,y=24,W=fw-28,H=h-(nolabel?48:96);c.fillStyle='#fff';c.fillRect(x-6,y-6,W+12,H+12);c.fillStyle='#d8d2c2';c.fillRect(x,y,W,H);
+    if(i===0){c.fillStyle='#8a8478';c.beginPath();c.ellipse(x+W/2,y+H*1.02,W*.42,H*.38,0,0,7);c.fill();c.fillStyle='#f4f1ea';c.beginPath();c.moveTo(x+W*.4,y+H*.68);c.lineTo(x+W/2,y+H*.9);c.lineTo(x+W*.6,y+H*.68);c.lineTo(x+W*.55,y+H);c.lineTo(x+W*.45,y+H);c.fill();
+      c.fillStyle='#b8b0a0';c.beginPath();c.arc(x+W/2,y+H*.42,W*.2,0,7);c.fill();c.fillStyle='#3a3630';c.beginPath();c.arc(x+W/2,y+H*.38,W*.21,Math.PI*1.05,Math.PI*1.95);c.fill();}
+    else if(i===1){for(let r=0;r<3;r++)for(let k=0;k<6-r%2;k++){const cx=x+W*(.12+k*.15+(r%2)*.07),cy=y+H*(.3+r*.22);c.fillStyle=r===2?'#f4f1ea':'#5a5650';c.fillRect(cx-W*.05,cy+H*.04,W*.1,H*.12);c.fillStyle='#a8a090';c.beginPath();c.arc(cx,cy,W*.04,0,7);c.fill();}}
+    else{c.fillStyle='#c9a46a';c.fillRect(x+W*.08,y+H*.18,W*.84,H*.64);c.fillStyle='#efe2c0';c.fillRect(x+W*.11,y+H*.21,W*.37,H*.58);c.fillRect(x+W*.52,y+H*.21,W*.37,H*.58);c.strokeStyle='#a08a60';c.lineWidth=1.5;
+      for(let k=1;k<8;k++){c.beginPath();c.moveTo(x+W*.11,y+H*(.21+k*.07));c.lineTo(x+W*.48,y+H*(.21+k*.07));c.moveTo(x+W*.52,y+H*(.21+k*.07));c.lineTo(x+W*.89,y+H*(.21+k*.07));c.stroke();}}
+    c.fillStyle='#c0402f';c.font='40px Jua, sans-serif';c.textAlign='center';c.textBaseline='middle';c.fillText(['①','②','③'][i],x+22,y+24);}}
+
+/* 각 장면 만들기 */
+const groups=[],RS=[];
+SCENES.forEach((sc,i)=>{const g=new THREE.Group();g.visible=false;scene.add(g);const R={obs:[],hits:[]};sc.build(g,R);
+  if(sc.npc){const n=sc.npc,p=makePerson(n.look);p.position.set(n.x,0,n.z);p.rotation.y=n.a;g.add(p);
+    const mk=label('!',{fs:80,h:.55,fg:'#ffffff',bg:'#c0402f'});mk.position.set(n.x,2.05*(n.look.h||1),n.z);g.add(mk);
+    const nm=label(n.name,{fs:44,h:.24});nm.position.set(n.x,1.82*(n.look.h||1)+(n.look.fedora||n.look.gat?.15:0),n.z);g.add(nm);R.npc={p,mk,ph:Math.random()*6};
+    R.obs.push({x:n.x,z:n.z,r:.4});R.hits.push(['npc',p.children[0].children]);}
+  sc.stations.forEach(st=>{const l=label(st.label,{fs:40,h:.22,bg:st.opt?'rgba(217,164,65,.95)':'rgba(43,63,92,.9)',fg:'#ffffff'});l.position.set(st.x+Math.sin(st.h)*1.1,1.95,st.z+Math.cos(st.h)*1.1);g.add(l);st.lb=l;});
+  groups.push(g);RS.push(R);});
+
+/* ---------------- 진행 상태 ---------------- */
+function sceneDone(i){return !!S.stamps[SCENES[i].id];}
+function unlockedUpTo(){if(S.free)return SCENES.length-1;let i=0;while(i<SCENES.length-1&&sceneDone(i))i++;return i;}
+function clueCount(){return SCENES.filter((s,i)=>sceneDone(i)).length;}
+function starCount(){return Object.values(S.stars).reduce((a,b)=>a+b,0);}
+function updateHud(){$('#clueN').textContent=clueCount();$('#starN').textContent=starCount();}
+function stamp(id){if(S.stamps[id])return;S.stamps[id]=Date.now();save();sfx.stamp();updateHud();
+  const n=clueCount();toast(n===6?'1차시 도장 6개 완성! 다음 시간에는 기념관이 열려요':'도장 쾅! '+n+' / 10',2800);
+  if(n===SCENES.length)setTimeout(()=>{sfx.fan();panelCert();},1800);}
+function setStars(k,n){const old=S.stars[k]||0;if(n>old){S.stars[k]=n;save();updateHud();toast('★ '+n+'개! 별 모으기 '+starCount()+'개',2000);}}
+function starHtml(n){let s='';for(let i=0;i<3;i++)s+=i<n?'★':'<i>★</i>';return '<span class="stars">'+s+'</span>';}
+
+/* ---------------- 이동·점프 ---------------- */
+let cur=-1,CS=null,CR=null;
+const pos=new THREE.Vector3();let heading=Math.PI,posY=0,vy=0,onGround=true,runToggle=false;
+const keys={up:0,down:0,left:0,right:0,run:0};let target=null,pending=null,sheetOpen=false,dlgOpen=false,started=false,overlay=false,first=true;
+const keyMap={ArrowUp:'up',KeyW:'up',ArrowDown:'down',KeyS:'down',ArrowLeft:'left',KeyA:'left',ArrowRight:'right',KeyD:'right'};
+const busy=()=>sheetOpen||dlgOpen||overlay||!started||cur<0;
+window.addEventListener('keydown',e=>{
+  if(e.key==='Escape'){if(dlgOpen)closeDialog(false);else if(sheetOpen)closeSheet();return;}
+  if(dlgOpen&&(e.code==='Enter'||e.code==='Space')&&e.target.tagName!=='BUTTON'){e.preventDefault();$('#dlgNext').click();return;}
+  if(busy()||/INPUT|TEXTAREA|SELECT/.test(e.target.tagName))return;
+  if(e.target.tagName==='BUTTON'&&(e.code==='Space'||e.code==='Enter'))return;
+  if(e.key==='Shift')keys.run=1;
+  const k=keyMap[e.code];if(k){keys[k]=1;target=null;pending=null;e.preventDefault();}
+  if(e.code==='Space'){e.preventDefault();if(!e.repeat)doJump();}
+  if((e.code==='Enter'||e.code==='KeyE')&&nearSpot){e.preventDefault();openSpot(nearSpot);}
+});
+window.addEventListener('keyup',e=>{const k=keyMap[e.code];if(k)keys[k]=0;if(e.key==='Shift')keys.run=0;});
+window.addEventListener('blur',()=>{for(const k in keys)keys[k]=0;});
+document.querySelectorAll('.dpad button').forEach(b=>{const k=b.dataset.k;
+  b.addEventListener('pointerdown',e=>{e.preventDefault();keys[k]=1;target=null;pending=null;try{b.setPointerCapture(e.pointerId);}catch(_){}});
+  ['pointerup','pointercancel','lostpointercapture'].forEach(ev=>b.addEventListener(ev,()=>{keys[k]=0;}));});
+function doJump(){if(busy()||!onGround)return;vy=7.8;onGround=false;tone([[392,.07],[587,.12]],'sine',.08);}
+$('#jumpB').addEventListener('pointerdown',e=>{e.preventDefault();doJump();});
+$('#runB').addEventListener('click',e=>{runToggle=!runToggle;e.currentTarget.setAttribute('aria-pressed',String(runToggle));e.currentTarget.textContent=runToggle?'걷기':'달리기';sfx.tap();});
+const ray=new THREE.Raycaster(),mouse=new THREE.Vector2();let drag=null;const cv=renderer.domElement;
+cv.addEventListener('pointerdown',e=>{drag={x:e.clientX,y:e.clientY,lx:e.clientX,moved:false};try{cv.setPointerCapture(e.pointerId);}catch(_){}});
+cv.addEventListener('pointermove',e=>{if(!drag)return;const dx=e.clientX-drag.lx;drag.lx=e.clientX;if(Math.hypot(e.clientX-drag.x,e.clientY-drag.y)>8)drag.moved=true;if(drag.moved&&!busy()){heading-=dx*.006;target=null;pending=null;}});
+cv.addEventListener('pointerup',e=>{const d=drag;drag=null;if(!d||d.moved||busy())return;
+  const r=cv.getBoundingClientRect();mouse.set((e.clientX-r.left)/r.width*2-1,-(e.clientY-r.top)/r.height*2+1);ray.setFromCamera(mouse,camera);
+  const list=[];CR.hits.forEach(([k,ms])=>ms.forEach(m=>{if(m.isMesh){m.userData.spot=k;list.push(m);}else if(m.traverse)m.traverse(x=>{if(x.isMesh){x.userData.spot=k;list.push(x);}});}));
+  const h=ray.intersectObjects(list,false);if(h.length){walkTo(h[0].object.userData.spot);}});
+function spotPos(k){if(k==='npc'){const n=CS.npc;return {x:n.x+Math.sin(n.a)*1.15,z:n.z+Math.cos(n.a)*1.15,h:n.a+Math.PI,r:1.2};}return CS.stations.find(s=>s.k===k);}
+function walkTo(k){const s=spotPos(k);if(!s)return;target={x:s.x,z:s.z};pending=k;}
+function inRect(o,x,z,m){return Math.abs(x-o.x)<o.hw+m&&Math.abs(z-o.z)<o.hd+m;}
+function pushOut(p,o){if(inRect(o,p.x,p.z,.3)){const dx=p.x-o.x,dz=p.z-o.z,px=o.hw+.3-Math.abs(dx),pz=o.hd+.3-Math.abs(dz);if(px<pz)p.x+=Math.sign(dx||1)*px;else p.z+=Math.sign(dz||1)*pz;}}
+function clampPos(p){
+  CR.obs.forEach(o=>{if(o.hw!==undefined)pushOut(p,o);
+    else{const dx=p.x-o.x,dz=p.z-o.z,d=Math.hypot(dx,dz),m=o.r+.3;if(d<m&&d>1e-4){p.x=o.x+dx/d*m;p.z=o.z+dz/d*m;}}});
+  // 상자·돌담: 위에 있으면 올라서고, 아래에 있으면 막혀요
+  if(CR.plats)CR.plats.forEach(o=>{if(posY<o.top-.32)pushOut(p,o);});
+  const hx=CS.hx-.6,zmin=-CS.hz+.7,zmax=CS.hz-.6;
+  p.x=Math.max(-hx,Math.min(hx,p.x));p.z=Math.max(zmin,Math.min(zmax,p.z));
+}
+function groundAt(x,z){let G=0;if(CR.plats)CR.plats.forEach(o=>{if(Math.abs(x-o.x)<o.hw+.05&&Math.abs(z-o.z)<o.hd+.05&&posY>=o.top-.35)G=Math.max(G,o.top);});return G;}
+
+/* ---------------- ★ 도전 (시간 재기) ---------------- */
+let CH=null;const timerEl=$('#timer'),timerT=$('#timerT');
+function startCh(k){closeSheet();CH={k,i:cur,t0:performance.now()};CR.ch.start();timerEl.classList.add('on');sfx.ok();toast('시작! '+CR.ch.status(),1600);}
+function stopCh(msg){if(!CH)return;const R=RS[CH.i];R.ch.stop();CH=null;timerEl.classList.remove('on');if(msg)toast(msg,1800);}
+$('#timerStop').addEventListener('click',()=>stopCh('도전을 멈췄어요'));
+function chTick(){if(!CH)return;const sec=(performance.now()-CH.t0)/1000;timerT.textContent='★ '+sec.toFixed(1)+'초 · '+RS[CH.i].ch.status();
+  if(RS[CH.i].ch.check()){const k=CH.k,th=RS[CH.i].ch.th,n=sec<=th[0]?3:sec<=th[1]?2:1;stopCh();sfx.fan();S.pick[k+'Best']=Math.min(S.pick[k+'Best']||999,+sec.toFixed(1));if(!S.done[k]){S.done[k]=true;refreshMarks();}save();setStars(k,n);
+    setTimeout(()=>toast('성공! '+sec.toFixed(1)+'초 · ★ '+n+'개',2600),300);}}
+function chPanel(k,how){const R=CR,best=S.pick[k+'Best'];
+  add(el('<div class="gbox"><h3>'+CS.stations.find(s=>s.k===k).title+'</h3><p>'+how+'</p><p class="note">별 3개: '+R.ch.th[0]+'초 안 · 별 2개: '+R.ch.th[1]+'초 안 · 성공하면 별 1개</p><div>내 기록 '+starHtml(S.stars[k]||0)+(best?' <span class="note">('+best+'초)</span>':'')+'</div></div>'));
+  add(el('<p class="note">★ 도전은 도장과 상관없어요. 교과서를 다 쓰고 시간이 남을 때 해요.</p>'));
+  const b=add(el('<button class="btn flame big" type="button">도전 시작</button>'));b.addEventListener('click',()=>startCh(k));}
+
+/* ---------------- 장면 이동 ---------------- */
+function enterScene(i){
+  if(i>unlockedUpTo()){sfx.no();toast('아직 잠긴 장면이에요. 앞 장면의 도장을 먼저 받아요.',2200);return;}
+  if(CH)stopCh();
+  const sc=SCENES[i];
+  groups.forEach((g,j)=>g.visible=j===i);cur=i;CS=sc;CR=RS[i];
+  scene.background=new THREE.Color(sc.bg);scene.fog.color=new THREE.Color(sc.bg);scene.fog.near=sc.fog[0];scene.fog.far=sc.fog[1];hemi.intensity=sc.hemi;sun.intensity=sc.dir;
+  pos.set(sc.spawn[0],0,sc.spawn[1]);heading=sc.spawn[2];posY=0;vy=0;first=true;target=null;pending=null;
+  $('#sceneChip').textContent=sc.place;
+  closeMap();closeSheet();refreshMarks();
+  if(sc.npc&&!S.met[sc.id])setTimeout(()=>{S.met[sc.id]=true;save();refreshMarks();openDialog(sc.npc,()=>{});},500);
+}
+function refreshMarks(){RS.forEach((R,i)=>{if(R.npc)R.npc.mk.visible=!S.met[SCENES[i].id];});
+  SCENES.forEach(sc=>sc.stations.forEach(st=>{st.lb.material.opacity=S.done[st.k]?.5:1;}));}
+
+/* ---------------- 시간 여행 지도 ---------------- */
+function caseThumb(cvs,i){const g=cvs.getContext('2d'),w=cvs.width,h=cvs.height,sc=SCENES[i];
+  const bg='#'+new THREE.Color(sc.day===1?[0x8aa6bd,0xa7c18a,0x8a6a4a,0x3d5a80,0x6b3a2a,0x3d4a44][i]:[0xc0402f,0x2b3f5c,0x2e6b4f,0x5b4a8a][i-6]).getHexString();
+  g.fillStyle=bg;g.fillRect(0,0,w,h);g.fillStyle='rgba(255,255,255,.14)';for(let k=0;k<8;k++)g.fillRect(k*w/8,h*.72,w/8-4,h*.28);
+  g.fillStyle='#fff';g.font='54px Jua, sans-serif';g.textAlign='center';g.textBaseline='middle';g.fillText(sc.year,w/2,h/2-6);
+  if(sceneDone(i)){g.strokeStyle='#ffdfd8';g.lineWidth=5;g.beginPath();g.arc(w-46,36,26,0,7);g.stroke();g.fillStyle='#ffdfd8';g.font='22px Jua, sans-serif';g.fillText(sc.seal,w-46,37);}}
+function renderMap(){const box=$('#days');box.innerHTML='';const up=unlockedUpTo();
+  [[1,'1차시 · 원고가 걸어온 길','교과서 194~200쪽 「큰사전이 필요하다」 읽기'],[2,'2차시 · 1957 큰사전 완간 기념관','교과서 201~203쪽 정리하기']].forEach(([d,t,s])=>{
+    const sec=el('<section class="day"><h2>'+t+' <small>'+s+'</small></h2><div class="cases"></div></section>');box.appendChild(sec);const cs=sec.querySelector('.cases');
+    SCENES.forEach((sc,i)=>{if(sc.day!==d)return;const done=sceneDone(i),locked=i>up;
+      const b=el('<button class="ccard'+(done?' done':'')+'" type="button"'+(locked?' disabled':'')+'><span class="n">장면 '+(i+1)+' · 교과서 '+sc.tb+'쪽</span><canvas width="300" height="110"></canvas><h3>'+sc.title+'</h3><span class="pl">'+sc.place+'</span><span class="st">'+(done?'도장 받음 ✓':locked?'잠김':'갈 수 있어요')+'</span></button>');
+      caseThumb(b.querySelector('canvas'),i);b.addEventListener('click',()=>{sfx.tap();enterScene(i);});cs.appendChild(b);});});}
+function openMap(){renderMap();$('#map').classList.add('on');overlay=true;closeSheet();}
+function closeMap(){$('#map').classList.remove('on');overlay=false;}
+$('#mapBtn').addEventListener('click',openMap);
+$('#mapClose').addEventListener('click',()=>{if(cur<0){toast('먼저 장면 카드를 눌러 떠나요',1800);return;}closeMap();});
+$('#clueBtn').addEventListener('click',()=>panelClues());
+$('#teachBtn').addEventListener('click',()=>panelTeach());
+
+/* ---------------- 대화 ---------------- */
+const dlg=$('#dlg'),dlgSay=$('#dlgSay'),dlgNext=$('#dlgNext');let dlgState=null,typeT=null;
+function drawFace(cvs,n){const g=cvs.getContext('2d'),W=cvs.width,L=n.look,hex=c=>'#'+(c||0).toString(16).padStart(6,'0');
+  g.clearRect(0,0,W,W);g.fillStyle=n.bg;g.beginPath();g.arc(W/2,W/2,W/2,0,7);g.fill();
+  g.fillStyle=hex(L.coat||L.shirt);g.beginPath();g.ellipse(W/2,W*1.02,W*.36,W*.3,0,0,7);g.fill();
+  g.fillStyle=hex(L.skin);g.beginPath();g.arc(W/2,W*.48,W*.24,0,7);g.fill();
+  g.fillStyle=L.cap?hex(L.cap):L.fedora?hex(L.fedora):hex(L.hair);g.beginPath();g.arc(W/2,W*.45,W*.255,Math.PI*1.02,Math.PI*1.98);g.fill();
+  if(L.fedora){g.fillStyle=hex(L.fedora);g.fillRect(W*.2,W*.33,W*.6,W*.05);}
+  g.fillStyle='#2b221c';[-1,1].forEach(s=>{g.beginPath();g.ellipse(W/2+s*W*.085,W*.49,W*.022,W*.03,0,0,7);g.fill();});
+  if(L.glasses){g.strokeStyle='#222';g.lineWidth=W*.015;[-1,1].forEach(s=>{g.beginPath();g.arc(W/2+s*W*.085,W*.49,W*.05,0,7);g.stroke();});}
+  g.strokeStyle='#7a3b2e';g.lineWidth=W*.018;g.lineCap='round';g.beginPath();g.arc(W/2,W*.55,W*.06,.2*Math.PI,.8*Math.PI);g.stroke();}
+function openDialog(n,after){closeSheet();for(const k in keys)keys[k]=0;target=null;pending=null;dlgOpen=true;dlgState={n,i:0,after,typing:false};
+  $('#dlgName').textContent=n.name;$('#dlgRole').textContent=n.role;drawFace($('#dlgFace'),n);dlg.classList.add('on');showLine();sfx.tap();}
+function showLine(){const st=dlgState,txt=st.n.lines[st.i];clearInterval(typeT);let c=0;st.typing=true;dlgSay.textContent='';
+  $('#dlgStep').textContent=(st.i+1)+' / '+st.n.lines.length;dlgNext.textContent=st.i<st.n.lines.length-1?'다음 ▶':st.n.end;
+  if(reduceMotion){dlgSay.textContent=txt;st.typing=false;return;}
+  typeT=setInterval(()=>{c+=2;dlgSay.textContent=txt.slice(0,c);if(c>=txt.length){clearInterval(typeT);st.typing=false;}},28);}
+function closeDialog(run){clearInterval(typeT);dlg.classList.remove('on');dlgOpen=false;const a=dlgState&&dlgState.after;dlgState=null;if(run&&a)setTimeout(a,60);}
+dlgNext.addEventListener('click',()=>{const st=dlgState;if(!st)return;if(st.typing){clearInterval(typeT);dlgSay.textContent=st.n.lines[st.i];st.typing=false;return;}
+  if(st.i<st.n.lines.length-1){st.i++;showLine();sfx.tap();}else closeDialog(true);});
+$('#dlgSkip').addEventListener('click',()=>closeDialog(true));
+
+/* ---------------- 활동 창 공통 ---------------- */
+const sheet=$('#sheet'),sBody=$('#sheetBody'),sTitle=$('#sheetTitle');
+function openSheet(title,sub){sTitle.innerHTML=title+(sub?'<small>'+sub+'</small>':'');sBody.innerHTML='';sBody.scrollTop=0;sheet.classList.add('on');sheet.setAttribute('aria-hidden','false');sheetOpen=true;for(const k in keys)keys[k]=0;}
+function closeSheet(){sheet.classList.remove('on');sheet.setAttribute('aria-hidden','true');sheetOpen=false;}
+$('#sheetClose').addEventListener('click',closeSheet);
+const add=n=>{sBody.appendChild(n);return n;};
+const WB={photos:'교과서 194쪽 1번',paper:'교과서 194~195쪽',bundle:'교과서 195~196쪽 · 196쪽 「생각하며 읽기」',name:'교과서 196쪽',cards:'교과서 197쪽',calendar:'교과서 197쪽',goals:'교과서 198쪽',crisis:'교과서 198쪽 · 「생각하며 읽기」',
+ diary:'교과서 199쪽',think:'교과서 199쪽 「생각하며 읽기」',box:'교과서 199~200쪽',match:'교과서 201쪽 3번',flash:'교과서 195~200쪽 ◆ 낱말 풀이',q1:'교과서 201쪽 4번 (1)',q2:'교과서 201쪽 4번 (2)',q3:'교과서 201쪽 4번 (3)',order:'교과서 202쪽 (4)',blanks:'교과서 202쪽 (4)',row1:'교과서 203쪽 5번 첫째 줄',row2:'교과서 203쪽 5번 둘째 줄',row3:'교과서 203쪽 5번 셋째 줄'};
+// 1차시 장면: 먼저 교과서를 읽어야 활동이 열려요
+function readGate(k){const sc=CS;
+  const box=add(el('<div class="read"><h3>📖 먼저 교과서를 읽어요</h3><div class="pg">'+sc.read+'</div><p>천천히, 꼼꼼하게 읽어요. 모르는 낱말이 나오면 동그라미 하고, 쪽 아래 ◆ 낱말 풀이를 봐요.</p></div>'));
+  const g=add(el('<div class="wc"><h3>다 읽었나요?</h3></div>'));const btn=el('<button class="btn flame" type="button" disabled>활동 시작하기</button>');
+  ['교과서의 이 부분을 끝까지 읽었어요','모르는 낱말에 동그라미를 했어요 (없으면 체크)'].forEach((t,i)=>{const id='rd'+i;const lb=el('<label for="'+id+'"><input type="checkbox" id="'+id+'"><span>'+t+'</span></label>');
+    lb.querySelector('input').addEventListener('change',()=>{btn.disabled=[...g.querySelectorAll('input')].some(x=>!x.checked);sfx.tap();});g.appendChild(lb);});
+  btn.addEventListener('click',()=>{S.read[sc.id]=true;save();sfx.ok();openSpot(k);});g.appendChild(btn);add(next('나중에 하기'));}
+function openSpot(k){
+  if(k==='npc'){S.met[CS.id]=true;save();refreshMarks();return openDialog(CS.npc,()=>{});}
+  const st=CS.stations.find(s=>s.k===k);if(!st)return;
+  openSheet(st.title,CS.no+' · '+CS.place);if(WB[k])add(el('<div class="wb">✎ '+WB[k]+'</div>'));
+  if(CS.read&&!S.read[CS.id]&&!st.opt)return readGate(k);
+  (PANELS[k]||(()=>add(el('<p>준비 중이에요.</p>'))))();
+  setTimeout(()=>{const f=sBody.querySelector('button.opt,textarea,input');if(f&&window.matchMedia('(pointer:fine)').matches)f.focus({preventScroll:true});},320);
+}
+// 선택 문제
+function quiz(o){const box=el('<div class="box"><h3>'+o.h+'</h3>'+(o.q?'<p>'+o.q+'</p>':'')+'<div class="opts"></div><div class="fb" aria-live="polite"></div><div class="rv"></div></div>');
+  const opts=box.querySelector('.opts'),fb=box.querySelector('.fb'),rv=box.querySelector('.rv');
+  const bs=o.opts.map((t,i)=>{const b=el('<button class="opt" type="button">'+t+'</button>');opts.appendChild(b);
+    b.addEventListener('click',()=>{if(box.dataset.done)return;if(i===o.ans)fin(false);else{b.classList.add('wrong');b.disabled=true;sfx.no();fb.innerHTML='<span class="bad">다시 생각해 봐요.</span> '+((o.hints||[])[i]||'교과서를 다시 읽어 봐요.');}});return b;});
+  function fin(q){box.dataset.done=1;bs.forEach((b,i)=>{b.disabled=true;if(i===o.ans)b.classList.add('right');});fb.innerHTML='<span class="good">'+(q?'해결한 문제예요':'정답이에요!')+'</span>'+(o.why?' '+o.why:'');if(!q)sfx.ok();o.onRight&&o.onRight(rv,q);}
+  if(o.done)fin(true);return box;}
+// 여러 개 고르기
+function multi(o){const box=el('<div class="box"><h3>'+o.h+'</h3>'+(o.q?'<p>'+o.q+'</p>':'')+'<div class="checks"></div><button class="btn" type="button">확인하기</button><div class="fb" aria-live="polite"></div></div>');
+  const ch=box.querySelector('.checks'),fb=box.querySelector('.fb'),btn=box.querySelector('.btn');
+  const items=o.items.map(([t,ok])=>{const id='m'+Math.random().toString(36).slice(2,8);const l=el('<label for="'+id+'"><input type="checkbox" id="'+id+'"><span>'+t+'</span></label>');ch.appendChild(l);return {l,ok,inp:l.querySelector('input')};});
+  function fin(){box.dataset.done=1;items.forEach(it=>{it.inp.checked=it.ok;it.inp.disabled=true;if(it.ok)it.l.classList.add('ok');});btn.remove();fb.innerHTML='<span class="good">'+(o.okMsg||'모두 찾았어요!')+'</span>';o.onRight&&o.onRight();}
+  btn.addEventListener('click',()=>{const miss=items.filter(it=>it.ok&&!it.inp.checked).length,wrong=items.filter(it=>!it.ok&&it.inp.checked);
+    items.forEach(it=>it.l.classList.remove('no'));wrong.forEach(it=>it.l.classList.add('no'));
+    if(!miss&&!wrong.length){sfx.ok();fin();}else{sfx.no();fb.innerHTML='<span class="bad">'+(wrong.length?'글과 다른 것이 있어요. ':'')+(miss?'맞는 것이 '+miss+'개 더 있어요.':'')+'</span>';}});
+  if(o.done)fin();return box;}
+// 둘로 나누기
+function sorter(o){const box=el('<div class="box"><h3>'+o.h+'</h3>'+(o.q?'<p>'+o.q+'</p>':'')+'<div class="sort"></div><div class="fb"></div></div>');const so=box.querySelector('.sort'),fb=box.querySelector('.fb');let left=o.items.length;
+  o.items.forEach(([t,a],i)=>{const it=el('<div class="it"><span>'+t+'</span><button type="button">'+o.a+'</button><button type="button">'+o.b+'</button></div>');const bs=it.querySelectorAll('button');
+    if(o.done){it.classList.add('ok');bs[a].classList.add('pick');left=0;}
+    bs.forEach((b,j)=>b.addEventListener('click',()=>{if(it.classList.contains('ok'))return;if(j===a){it.classList.add('ok');b.classList.add('pick');sfx.ok();left--;if(!left){fb.innerHTML='<span class="good">다 나눴어요!</span>';o.onRight&&o.onRight();}}
+      else{sfx.no();it.classList.remove('shake');void it.offsetWidth;it.classList.add('shake');if(o.hint)toast(o.hint,2000);}}));so.appendChild(it);});
+  if(o.done){fb.innerHTML='<span class="good">다 나눴어요!</span>';}return box;}
+// 차례대로 줄 세우기
+function orderer(o){const box=el('<div class="box"><h3>'+o.h+'</h3>'+(o.q?'<p>'+o.q+'</p>':'')+'<ol class="ord"></ol><div class="opts"></div><div class="fb"></div></div>');
+  const ol=box.querySelector('.ord'),pool=box.querySelector('.opts'),fb=box.querySelector('.fb');let n=0;
+  const place=t=>{ol.appendChild(el('<li>'+t+'</li>'));n++;};
+  if(o.done){o.items.forEach(place);fb.innerHTML='<span class="good">차례대로 놓았어요!</span>';return box;}
+  shuffle(o.items).forEach(t=>{const b=el('<button class="opt" type="button">'+t+'</button>');b.addEventListener('click',()=>{if(t===o.items[n]){b.remove();place(t);sfx.ok();if(n===o.items.length){fb.innerHTML='<span class="good">차례대로 놓았어요!</span>';o.onRight&&o.onRight();}}
+    else{sfx.no();b.classList.remove('shake');void b.offsetWidth;b.classList.add('shake');toast(o.hint||'그보다 먼저 일어난 일이 있어요',1600);}});pool.appendChild(b);});
+  return box;}
+// 낱말 카드를 빈칸에 붙이기: 카드를 누르고 빈칸을 눌러요
+function fillMatch(o){const box=el('<div class="box"><h3>'+o.h+'</h3>'+(o.q?'<p>'+o.q+'</p>':'')+'<div class="cards"></div><div class="fm"></div><div class="fb"></div></div>');
+  const cards=box.querySelector('.cards'),fm=box.querySelector('.fm'),fb=box.querySelector('.fb');let sel=null,left=o.rows.length;
+  const rows=o.rows.map(r=>{const parts=r.t.split('＿');const b=el('<button class="fmr" type="button">'+parts[0]+'<span class="slot">?</span>'+(parts[1]||'')+'</button>');fm.appendChild(b);return {b,a:r.a,ok:false};});
+  function fill(r){r.ok=true;r.b.classList.add('ok');r.b.querySelector('.slot').textContent=r.a;}
+  if(o.done){rows.forEach(fill);fb.innerHTML='<span class="good">빈칸을 모두 채웠어요!</span>';return box;}
+  const cs=shuffle(o.chips).map(t=>{const c=el('<button class="card" type="button" aria-pressed="false">'+t+'</button>');c.addEventListener('click',()=>{sel=sel===c?null:c;cs.forEach(x=>x.setAttribute('aria-pressed',String(x===sel)));sfx.tap();});cards.appendChild(c);return c;});
+  rows.forEach(r=>r.b.addEventListener('click',()=>{if(r.ok)return;if(!sel){toast('먼저 위의 낱말 카드를 골라요',1500);return;}
+    if(sel.textContent===r.a){fill(r);sel.classList.add('used');sel=null;sfx.ok();left--;if(!left){fb.innerHTML='<span class="good">빈칸을 모두 채웠어요!</span>';o.onRight&&o.onRight();}}
+    else{sfx.no();r.b.classList.remove('shake');void r.b.offsetWidth;r.b.classList.add('shake');toast('그 자리가 아니에요. 뜻을 다시 읽어 봐요',1600);}}));
+  return box;}
+// 내 생각 쓰기 (이 기기에 저장)
+function writer(o){const box=el('<div class="box"><h3>'+o.h+'</h3>'+(o.q?'<p>'+o.q+'</p>':'')+(o.chips?'<div class="cards"></div>':'')+'<textarea placeholder="'+(o.ph||'')+'"></textarea><button class="btn" type="button">'+(o.btn||'적기')+'</button><div class="fb"></div></div>');
+  const ta=box.querySelector('textarea'),fb=box.querySelector('.fb'),btn=box.querySelector('.btn');ta.value=S.txt[o.key]||'';ta.addEventListener('input',()=>{S.txt[o.key]=ta.value;save();});
+  if(o.chips){const cc=box.querySelector('.cards');o.chips.forEach(t=>{const c=el('<button class="card" type="button">'+t+'</button>');c.addEventListener('click',()=>{ta.value=(ta.value?ta.value.trim()+' ':'')+t;S.txt[o.key]=ta.value;save();ta.focus();sfx.tap();});cc.appendChild(c);});}
+  function fin(q){box.dataset.done=1;fb.innerHTML='<span class="good">'+(q?'적어 둔 생각이에요':'좋아요!')+'</span>'+(o.ex?'<div class="ex"><b>이렇게 쓴 친구도 있어요</b><br>'+o.ex+'</div>':'');if(!q)sfx.ok();o.onRight&&o.onRight();}
+  btn.addEventListener('click',()=>{const v=ta.value.trim();if(v.length<(o.min||4)){sfx.no();toast(o.short||'조금만 더 자세히 써 볼까요?',1700);ta.focus();return;}S.txt[o.key]=v;save();if(!box.dataset.done)fin(false);else{sfx.ok();toast('고쳐 썼어요',1200);}});
+  if(o.done)fin(true);return box;}
+// 문제 여러 개를 하나씩 이어서 보여 줘요
+function chain(list,allDone,onAll){const wrap=el('<div style="display:grid;gap:14px"></div>');let i=0;
+  function show(){if(i>=list.length){onAll&&onAll();return;}const node=list[i](allDone?()=>{}:()=>{i++;show();},allDone);wrap.appendChild(node);if(allDone){i++;show();}else if(i>0)setTimeout(()=>node.scrollIntoView({behavior:reduceMotion?'auto':'smooth',block:'nearest'}),120);}
+  show();return wrap;}
+// 교과서 체크 → 도장
+function checkFinish(holder){const sc=CS;if(!sc.stations.filter(s=>!s.opt).every(s=>S.done[s.k]))return;writeCheck(holder);}
+function writeCheck(holder){const sc=CS;holder.innerHTML='';
+  if(S.stamps[sc.id]){holder.appendChild(el('<div class="cluecard"><span class="seal">'+sc.seal+'</span><b>도장 '+(cur+1)+' · '+sc.title+'</b><span>'+sc.clue+'</span></div>'));
+    if(cur+1<SCENES.length){const nx=el('<button class="btn clue" type="button">'+(cur===5?'1차시 끝! 시간 여행 지도 보기':'시간 여행 지도에서 다음 장면으로')+'</button>');nx.addEventListener('click',openMap);holder.appendChild(nx);}return;}
+  const box=el('<div class="wc"><h3>✎ 이제 교과서에 쓸 차례!</h3><p class="note">아래를 교과서에 다 하고 하나씩 체크하면 도장을 받아요. 도장을 받아야 다음 장면이 열려요.</p></div>');
+  const btn=el('<button class="btn flame" type="button" disabled>다 했어요 · 도장 받기</button>');
+  sc.write.forEach((t,i)=>{const id='wc'+i+Math.random().toString(36).slice(2,6);const lb=el('<label for="'+id+'"><input type="checkbox" id="'+id+'"><span>'+t+'</span></label>');
+    lb.querySelector('input').addEventListener('change',()=>{btn.disabled=[...box.querySelectorAll('input')].some(x=>!x.checked);sfx.tap();});box.appendChild(lb);});
+  btn.addEventListener('click',()=>{stamp(sc.id);writeCheck(holder);holder.scrollIntoView({behavior:'smooth',block:'start'});});box.appendChild(btn);holder.appendChild(box);}
+function done(k,holder){if(!S.done[k]){S.done[k]=true;save();refreshMarks();}if(holder)checkFinish(holder);}
+function next(text){const b=el('<button class="btn ghost sm" type="button" style="justify-self:start">'+text+'</button>');b.addEventListener('click',closeSheet);return b;}
+// 패널 틀: 문제 목록 → 마치면 체크
+function steps(k,list,intro){if(intro)add(intro);const h=el('<div></div>');add(chain(list,!!S.done[k],()=>done(k,h)));add(h);}
+const Q=o=>(go,d)=>quiz(Object.assign({},o,{done:d,onRight:go}));
+const M=o=>(go,d)=>multi(Object.assign({},o,{done:d,onRight:go}));
+const O=o=>(go,d)=>orderer(Object.assign({},o,{done:d,onRight:go}));
+const F=o=>(go,d)=>fillMatch(Object.assign({},o,{done:d,onRight:go}));
+const W=o=>(go,d)=>writer(Object.assign({},o,{done:d,onRight:go}));
+const SO=o=>(go,d)=>sorter(Object.assign({},o,{done:d,onRight:go}));
+
+/* ---------------- 장면별 활동 ---------------- */
+const PANELS={};
+// 1. 1910 거리
+PANELS.photos=()=>{const lab=el('<div class="lab"><canvas width="720" height="470"></canvas><p class="note">교과서 194쪽 사진을 떠올리며 그린 그림이에요.</p></div>');drawPhotos(lab.querySelector('canvas').getContext('2d'),720,470,false);
+  steps('photos',[F({h:'사진의 이름 붙이기',q:'낱말 카드를 고른 뒤, 알맞은 사진 줄을 눌러요.',rows:[{t:'① 한복을 입은 한 사람의 사진 → ＿',a:'주시경'},{t:'② 여러 사람이 함께 찍은 사진 → ＿',a:'조선어학회'},{t:'③ 칸이 나뉜 낡은 책 → 『＿』',a:'말모이'}],chips:['주시경','조선어학회','말모이']}),
+    W({h:'내가 알고 있는 것',q:'세 사진 가운데 하나를 골라, 알고 있는 것이나 궁금한 것을 한 줄 써요. 그다음 짝과 이야기해요.',key:'know',min:5,ph:'예) 말모이는 영화에서 봤어요. / 조선어학회가 무슨 일을 했는지 궁금해요.',short:'알고 있는 것이나 궁금한 것을 한 줄 써요'})],lab);};
+PANELS.paper=()=>steps('paper',[
+  Q({h:'1910년, 무엇이 달라졌나요?',q:'한일 합병 조약 뒤, 일본은 우리나라의 공식 언어를 무엇으로 정했나요?',opts:['우리말','일본어','중국어'],ans:1}),
+  Q({h:'그래도 한글을 연구한 까닭',q:'우리나라 지식인들이 일본의 압박에도 한글을 계속 연구한 까닭은?',opts:['언어가 민족혼과 직결된다는 것을 알았기 때문에','일본어가 너무 어려웠기 때문에','사전을 팔아 돈을 벌려고'],ans:0}),
+  Q({h:'‘이불을 덮으면’ 사건',q:'그때 사람들은 같은 말을 <b>더프면, 덥흐면, 덥프면</b>처럼 제각각 썼어요. 왜 그랬을까요?',opts:['체계적인 문법이나 철자법이 없어서','한글 글자 수가 모자라서','종이와 붓이 부족해서'],ans:0}),
+  Q({h:'가장 좋은 방법',q:'통일된 체계를 세우려고 지식인들이 꼽은 가장 좋은 방법은?',opts:['일본어를 함께 배우기','사전을 만들기','신문을 많이 팔기'],ans:1,why:'사전은 낱말의 뜻만 모은 책이 아니라, 온 국민이 똑같은 언어를 쓸 수 있게 해 줘요.'})]);
+// 2. 등굣길
+PANELS.bundle=()=>steps('bundle',[
+  Q({h:'낱말 풀이 보기',q:'‘보퉁이’는 무슨 뜻일까요? 195쪽 아래 ◆ 풀이를 찾아봐요.',opts:['작은 책가방','물건을 보자기에 싸서 꾸려 놓은 것','두꺼운 사전'],ans:1}),
+  M({h:'한글을 사랑한 보퉁이 선생님',q:'주시경이 한글을 얼마나 사랑했는지 알 수 있는 일을 모두 골라요.',items:[['집이 가난해도 한글 연구에 필요한 책은 천금을 마다하고 샀다',1],['한글을 가르칠 수 있는 곳이라면 주저하지 않고 갔다',1],['조선어책을 보자기에 싸서 늘 들고 다녔다',1],['일본어 학교를 세워 일본어를 가르쳤다',0]]}),
+  M({h:'196쪽 · 생각하며 읽기',q:'모르는 낱말이 나왔을 때, 뜻을 이해하는 좋은 방법을 모두 골라요.',items:[['앞뒤 문장을 읽고 뜻을 짐작한다',1],['쪽 아래 ◆ 낱말 풀이를 본다',1],['국어사전을 찾아본다',1],['모르는 낱말은 건너뛰고 다시 보지 않는다',0],['뜻을 내 마음대로 정한다',0]],okMsg:'이 방법들을 짝에게 말해 봐요!'})]);
+PANELS.name=()=>steps('name',[
+  O({h:'우리글 이름의 변화',q:'우리글은 어떤 이름으로 불려 왔나요? 차례대로 눌러요.',items:['언문','국문','한글']}),
+  M({h:'‘한글’의 ‘한’에 담은 뜻',q:'주시경이 ‘한’이라는 글자에 담은 뜻을 모두 골라요.',items:[['크고 바르다',1],['숫자 1처럼 첫째가는',1],['대한 제국의 ‘한’, 우리 겨레',1],['한자로 쓴 글',0],['한가하고 느긋하다',0]],okMsg:'크고 바른 글, 첫째가는 글, 우리 겨레의 글!'}),
+  Q({h:'1908년의 일',q:'주시경이 1908년에 만들어 제자들과 사전을 만들기 시작한 모임은?',opts:['조선어학회','국어연구학회','조선어연구회'],ans:1})]);
+PANELS.bgame=()=>chPanel('bgame','흩어진 <b>보퉁이 6개</b>를 주워 선생님께 돌려드려요. 돌담 위에 있는 보퉁이는 <b>점프</b>로 올라가서 주워요. 달리기를 켜면 빨라요.');
+// 3. 말모이 작업실
+PANELS.cards=()=>steps('cards',[
+  Q({h:'사전의 이름',q:'『말모이』라는 이름은 어떤 뜻에서 지었나요?',opts:['말을 모아 놓았다','말을 잘하는 모임','말이 모이는 장터'],ans:0}),
+  M({h:'지난한 작업',q:'낱말을 모으고 뜻을 쉽게 풀어 쓰는 일에 필요했던 것을 모두 골라요.',items:[['시간',1],['돈',1],['인내',1],['일본의 허락',0]]}),
+  Q({h:'외국으로 가려 한 까닭',q:'1914년, 주시경이 원고를 가지고 외국으로 나가려 한 까닭은?',opts:['외국 말을 배우려고','일본의 간섭이 미치지 못하는 곳에서 『말모이』를 완성하려고','원고를 외국에 팔려고'],ans:1})]);
+PANELS.calendar=()=>steps('calendar',[
+  O({h:'1914년, 그해 일',q:'197쪽에서 일어난 일을 차례대로 눌러요.',items:['원고를 가지고 외국으로 나갈 계획을 세웠다','떠나기 며칠 전, 급체로 병원에 입원했다','7월 27일, 서른아홉의 나이로 생을 마쳤다','편찬에 참여한 사람들이 하나둘씩 떠나갔다','『말모이』는 빛을 보지 못하고 묻혔다']}),
+  W({h:'추론해 봐요 · 제자들의 마음',q:'선생님이 갑자기 세상을 떠났을 때, 함께 사전을 만들던 제자들의 마음은 어땠을까요? 글의 단서를 넣어 한 줄로 써요.',key:'pupil',min:8,ph:'예) 완성을 코앞에 두고 선생님이 떠나셔서 …했을 것이다.',chips:['슬펐을 것이다','막막했을 것이다','뜻을 꼭 이어야겠다고'],ex:'완성을 코앞에 두고 선생님이 떠나셔서 무척 슬프고 막막했을 것이다. 그래도 선생님의 뜻을 잇고 싶었을 것이다.'})]);
+// 4. 조선어학회
+PANELS.goals=()=>steps('goals',[
+  M({h:'지워진 칠판 채우기',q:'조선어학회의 목표 두 가지를 골라요.',items:[['글을 모르는 민중에게 한글을 가르치는 문맹 퇴치 운동',1],['한글 사전의 편찬',1],['일본어를 널리 보급하기',0],['한자 공부 모임 만들기',0]],okMsg:'첫째 문맹 퇴치 운동, 둘째 한글 사전 편찬!'}),
+  Q({h:'똑똑한 핑계',q:'조선어학회는 한글을 가르치려고 일본에 어떤 핑계를 댔나요?',opts:['한글이 일본어보다 훨씬 쉽다','쉬운 한글로 먼저 문맹을 퇴치한 다음 일본어를 가르치는 게 낫다','앞으로 일본어는 가르치지 않겠다'],ans:1,why:'일본은 민중에게 일본어를 가르칠 구체적인 방법을 세우지 못해 우왕좌왕하고 있었어요.'})]);
+PANELS.crisis=()=>steps('crisis',[
+  Q({h:'1938년의 위기',q:'1938년에 찾아온 위기는 무엇이었나요?',opts:['일본이 ‘일본어 상용화’를 발표하며 한글 사용을 금지했다','조선어학회 사무실에 불이 났다','회원들이 모두 외국으로 떠났다'],ans:0}),
+  Q({h:'섣불리 손을 대지 못한 까닭',q:'일본에게 조선어학회는 눈엣가시였어요. 그런데도 섣불리 손을 대지 못한 까닭은?',opts:['회원 수가 너무 많아서','조선어학회에 대한 민중의 지지가 높아서','일본 경찰이 조선어학회를 몰라서'],ans:1}),
+  M({h:'198쪽 · 생각하며 읽기',q:'글의 내용을 이해하기 어려울 때 쓸 수 있는 방법을 모두 골라요. 오늘 내가 쓴 방법은 무엇인지 짝에게 말해요.',items:[['어려운 부분을 다시 천천히 읽는다',1],['앞에서 읽은 내용과 이어 본다',1],['사회 시간에 배운 일제 강점기 지식을 떠올린다',1],['친구나 선생님께 묻는다',1],['그림만 보고 넘어간다',0]],okMsg:'내가 쓴 방법을 짝에게 말해 봐요!'})]);
+// 5. 기차
+PANELS.diary=()=>steps('diary',[
+  Q({h:'일기장의 한 줄',q:'경찰이 압수한 일기장에는 어떤 내용이 적혀 있었나요?',opts:['“오늘 일본어를 썼다가 선생님께 꾸지람을 들었다.”','“오늘 우리말 사전을 다 만들었다.”','“오늘 기차가 아주 늦게 왔다.”'],ans:0}),
+  Q({h:'추론해 봐요',q:'일본 경찰은 왜 이 한 줄을 문제 삼았을까요?',opts:['선생님이 일본어를 쓰지 말라고(우리말을 쓰라고) 가르쳤다는 단서라서','일기장 글씨가 틀려서','일기를 너무 길게 써서'],ans:0,why:'경찰은 이 기록을 단서로 교사 정태진이 조선어학회 회원이라는 사실을 밝혀냈어요.'}),
+  O({h:'일기장에서 시작된 일',q:'199쪽에서 일어난 일을 차례대로 눌러요.',items:['학생들이 기차 안에서 우리말을 썼다','경찰이 학생들의 집을 뒤져 일기장을 압수했다','일기장을 단서로 정태진이 조선어학회 회원임을 밝혀냈다','조선어학회 회원들이 붙잡혀 혹독한 고문을 받았다','경찰이 『큰사전』의 원고를 모두 압수했다']})]);
+PANELS.think=()=>steps('think',[
+  Q({h:'광복, 그리고 급한 일',q:'1945년 광복을 맞은 뒤, 조선어학회 회원들이 급히 해결해야 했던 일은?',opts:['새 사무실 짓기','『큰사전』의 원고 찾기','일본어 사전 만들기'],ans:1}),
+  W({h:'199쪽 · 생각하며 읽기',q:'사전 편찬과 독립운동이 연결된다고 생각한 까닭은 무엇일까요? 1910년 거리에서 들은 말을 떠올려 써요.',key:'link',min:10,ph:'예) 일본은 우리말을 없애려 했으니까 …',chips:['언어는 민족혼과 직결된다','우리말을 지키는 것','일본은 우리말을 없애려 했다'],ex:'일본이 우리말을 없애려 했기 때문에, 우리말을 모아 사전을 만드는 것은 우리 겨레의 얼을 지키는 일이었다. 그래서 독립운동과 이어진다.'})]);
+// 6. 서울역 창고
+PANELS.box=()=>{const lab=el('<div class="lab"><canvas width="760" height="320"></canvas><button class="btn flame" type="button">상자 뚜껑 열기</button></div>');const c=lab.querySelector('canvas').getContext('2d');let open=!!S.done.box;
+  function draw(k){c.clearRect(0,0,760,320);c.fillStyle='#2e3a33';c.fillRect(0,0,760,320);c.fillStyle='#b88a52';c.fillRect(200,150,360,150);c.strokeStyle='#7a5530';c.lineWidth=8;c.strokeRect(200,150,360,150);
+    if(k>0){for(let i=0;i<Math.floor(k*14);i++){c.save();c.translate(380+Math.sin(i*2.1)*140*k,150-i*8*k);c.rotate(Math.sin(i)*.4);c.fillStyle='#f6efdc';c.fillRect(-36,-24,72,48);c.fillStyle='#c0402f';c.fillRect(-30,-16,10,4);c.fillStyle='#999';for(let j=0;j<4;j++)c.fillRect(-26,-6+j*7,52,2);c.restore();}
+      c.fillStyle='#fff';c.font='40px Jua, sans-serif';c.textAlign='center';c.fillText('『큰사전』 원고 수만 장!',380,300+0*k);}
+    c.save();c.translate(200,150);c.rotate(-1.2*k);c.fillStyle='#a07a46';c.fillRect(0,-24,360,24);c.restore();}
+  draw(open?1:0);const btn=lab.querySelector('button');if(open)btn.remove();
+  btn.addEventListener('click',()=>{btn.remove();open=true;let k=0;const tt=setInterval(()=>{k=Math.min(1,k+.05);draw(k);if(k>=1){clearInterval(tt);sfx.fan();if(CR.lid)CR.lid.rotation.x=-1.9;go();}},30);});
+  let go=()=>{};
+  add(lab);const h=el('<div></div>');const holder=el('<div style="display:grid;gap:14px"></div>');add(holder);add(h);
+  const run=()=>holder.appendChild(chain([
+    Q({h:'상자 속에 든 것',q:'역장이 연 상자 안에는 무엇이 있었나요?',opts:['주인 잃은 화물','잃어버렸던 『큰사전』 원고 수만 장','일본 경찰의 서류'],ans:1}),
+    Q({h:'원고는 그 뒤에',q:'이 원고를 바탕으로 『조선말 큰사전』은 어떻게 나왔나요?',opts:['1945년에 한 번에 모두 나왔다','1947년에 1권이 나오고, 1957년 6권을 끝으로 완간되었다','아직 다 나오지 못했다'],ans:1}),
+    Q({h:'◆ 낱말 확인',q:'‘한국 전쟁의 <b>상흔</b> 속에서도’에서 ‘상흔’의 뜻은?',opts:['상처를 입은 자리에 남은 흔적','상을 받은 기록','장사하는 가게'],ans:0}),
+    Q({h:'◆ 낱말 확인',q:'‘1957년 6권을 끝으로 <b>완간되었다</b>’에서 ‘완간되다’의 뜻은?',opts:['책이 아주 잘 팔리다','총서나 전집 따위가 빠진 것 없이 모두 발간되다','책을 다시 고쳐 쓰다'],ans:1})],!!S.done.box,()=>done('box',h)));
+  if(open)run();else go=run;};
+PANELS.climb=()=>chPanel('climb','상자 더미를 <b>점프</b>로 한 칸씩 올라가 꼭대기의 <b>빛나는 상자</b>에 닿아요. 떨어져도 괜찮아요. 다시 올라가요!');
+// 7. 낱말 풀이 방
+PANELS.match=()=>steps('match',[
+  F({h:'201쪽 3번 · 낱말 카드 붙이기',q:'낱말 카드를 고른 뒤, 알맞은 뜻을 눌러요. 카드 하나는 남아요.',rows:[{t:'＿ : 배우지 못하여 글을 읽거나 쓸 줄을 모름. 또는 그런 사람.',a:'문맹'},{t:'＿ : 많은 돈이나 아주 귀중한 것을 비유적으로 이르는 말.',a:'천금'},{t:'＿ : 솜씨가 익숙하지 못하고 어설프다.',a:'섣부르다'},{t:'＿ : 무엇을 하기에 기회나 시기가 더할 수 없이 좋음을 이르는 말.',a:'절호'}],chips:['문맹','절호','천금','직결되다','섣부르다']}),
+  Q({h:'남은 카드 하나',q:'‘언어가 민족혼과 <b>직결된다</b>’에서 ‘직결되다’의 뜻은?',opts:['사이에 다른 것 없이 직접 이어지다','서로 멀리 떨어지다','줄을 서서 차례를 기다리다'],ans:0}),
+  SO({h:'글 속에서 다시 찾기',q:'낱말이 글에서 어떻게 쓰였는지 맞는 문장이면 ○, 틀리면 ✕를 눌러요.',a:'○',b:'✕',hint:'글에서 그 낱말이 나온 문장을 다시 찾아봐요',items:[['조선어학회는 글을 모르는 사람들을 위해 문맹 퇴치 운동을 했다.',0],['주시경은 책값이 비싸면 천금을 아끼려고 책을 사지 않았다.',1],['조선어학회에 대한 민중의 지지가 높아 일본은 섣불리 손을 대지 못했다.',0],['일본에게 절호의 기회가 찾아오자 조선어학회를 도와주었다.',1]]})]);
+const FLASH=[['집대성하다','여러 가지를 모아 하나의 체계를 이루어 완성하다',['여러 가지를 흩어 놓다','큰 소리로 외치다']],['보퉁이','물건을 보자기에 싸서 꾸려 놓은 것',['종이로 만든 상자','작은 주머니칼']],['손색없다','다른 것과 견주어 부족함이 없다',['색깔이 바래다','손이 아주 깨끗하다']],['망명하다','정치적인 이유로 위험을 피해 외국으로 몸을 옮기다',['이름을 바꾸다','먼 곳으로 여행을 가다']],['상흔','상처를 입은 자리에 남은 흔적',['상을 받은 흔적','오래된 집']],['완간되다','총서나 전집 따위가 빠진 것 없이 모두 발간되다',['책이 모두 팔리다','책을 반만 펴내다']]];
+PANELS.flash=()=>{const best=S.pick.flashBest;add(el('<div class="gbox"><h3>★ 낱말 번개</h3><p>글 속 ◆ 낱말 6개의 뜻을 빠르게 골라요. 틀리면 3초가 더해져요.</p><p class="note">별 3개: 25초 안 · 별 2개: 45초 안 · 다 맞히면 별 1개</p><div>내 기록 '+starHtml(S.stars.flash||0)+(best?' <span class="note">('+best+'초)</span>':'')+'</div></div>'));
+  const area=add(el('<div class="box"></div>'));const b=el('<button class="btn flame big" type="button">번개 시작</button>');area.appendChild(b);
+  b.addEventListener('click',()=>{let i=0,pen=0;const t0=performance.now();const list=shuffle(FLASH);
+    function ask(){area.innerHTML='';if(i>=list.length){const sec=(performance.now()-t0)/1000+pen;const n=sec<=25?3:sec<=45?2:1;S.pick.flashBest=Math.min(S.pick.flashBest||999,+sec.toFixed(1));S.done.flash=true;save();refreshMarks();sfx.fan();setStars('flash',n);
+        area.appendChild(el('<div><h3>끝! '+sec.toFixed(1)+'초</h3>'+starHtml(n)+'</div>'));const again=el('<button class="btn sm" type="button">다시 도전</button>');again.addEventListener('click',()=>{closeSheet();openSpot('flash');});area.appendChild(again);return;}
+      const [w,m,ds]=list[i];area.appendChild(el('<h3>'+(i+1)+' / 6 · <span style="color:var(--flame)">'+w+'</span></h3>'));const op=el('<div class="opts"></div>');area.appendChild(op);
+      shuffle([m].concat(ds)).forEach(t=>{const bt=el('<button class="opt" type="button">'+t+'</button>');bt.addEventListener('click',()=>{if(t===m){sfx.ok();i++;ask();}else{sfx.no();pen+=3;bt.classList.add('wrong');bt.disabled=true;toast('+3초',800);}});op.appendChild(bt);});}
+    ask();});};
+// 8. 증언의 방
+PANELS.q1=()=>steps('q1',[
+  Q({h:'(1) 보퉁이 선생님',q:'주시경이 ‘보퉁이 선생님’으로 불린 까닭은 무엇인가요?',opts:['보자기를 파는 가게를 해서','보자기에 싼 한 꾸러미의 책(조선어책)을 늘 들고 다녀서','학교에서 보자기 싸는 법을 가르쳐서'],ans:1}),
+  W({h:'내 말로 바꿔 쓰기',q:'교과서에 쓰기 전에, 「~ 때문이다.」로 끝나는 문장으로 정리해 봐요.',key:'q1',min:10,ph:'주시경이 ‘보퉁이 선생님’으로 불린 까닭은 …때문이다.',ex:'보자기에 싼 조선어책 꾸러미를 늘 들고 다니며 보았기 때문이다.'})]);
+PANELS.q2=()=>steps('q2',[
+  M({h:'(2) 조선어학회의 목표',q:'조선어학회의 목표를 모두 골라요.',items:[['문맹 퇴치 운동 (글을 모르는 민중에게 한글 가르치기)',1],['한글 사전의 편찬',1],['일본어 상용화',0],['신문사 세우기',0]]}),
+  W({h:'내 말로 바꿔 쓰기',q:'「첫째는 ~, 둘째는 ~이다.」 꼴로 정리해 봐요.',key:'q2',min:10,ph:'첫째는 …, 둘째는 …이다.',ex:'첫째는 글을 모르는 민중에게 한글을 가르치는 문맹 퇴치 운동이고, 둘째는 한글 사전의 편찬이다.'})]);
+PANELS.q3=()=>steps('q3',[
+  W({h:'(3) 원고를 찾은 날의 마음',q:'『큰사전』의 원고를 찾았을 때 조선어학회 회원들의 마음은 어땠을까요? 마음을 나타내는 낱말과 그렇게 생각한 <b>까닭</b>을 함께 써요.',key:'q3',min:12,chips:['기뻤을 것이다','감격스러웠을 것이다','안심했을 것이다','가슴이 벅찼을 것이다'],ph:'예) 다시는 못 찾을 줄 알았던 원고를 찾아서 …',short:'마음과 까닭을 함께 써요',
+   ex:'몇 년 동안 애써 만든 원고를 잃어버린 줄 알고 절망하다가 다시 찾았으니, 눈물이 날 만큼 기쁘고 감격스러웠을 것이다.'})]);
+// 9. 연표 회랑
+PANELS.order=()=>steps('order',[O({h:'사건 카드 줄 세우기',q:'일어난 차례대로 눌러요. 연도 기둥을 보며 해도 좋아요.',items:TL.map(([y,t])=>y+'년 · '+t),hint:'연도를 보고 더 이른 일부터 골라요'})]);
+PANELS.blanks=()=>steps('blanks',[F({h:'202쪽 연표 빈칸',q:'낱말 카드를 고른 뒤 빈칸을 눌러요. 남는 카드도 있어요.',rows:[{t:'1908년, 주시경은 ‘국어연구학회’를 만들어 제자들과 ＿을/를 만들기 시작했다.',a:'사전'},{t:'1914년 7월 27일 주시경이 생을 마친 뒤, 1921년에 ＿이/가 설립되었다.',a:'조선어연구회'},{t:'1931년, ＿(으)로 이름을 바꾸고 주시경의 뜻을 이어받아 사전 편찬을 시작했다.',a:'조선어학회'},{t:'1945년 9월 8일, ＿ 창고에서 『큰사전』 원고를 찾았다.',a:'서울역'},{t:'1957년, ＿이/가 완간되었다.',a:'『조선말 큰사전』'}],chips:['사전','조선어연구회','조선어학회','서울역','『조선말 큰사전』','국어연구학회','함흥역']})]);
+// 10. 추론 탐정 방
+PANELS.row1=()=>steps('row1',[
+  SO({h:'글에 있는 것? 추론한 것?',q:'203쪽 첫째 줄을 보면, ‘글 내용’은 글에 쓰여 있고 ‘추론한 내용’은 단서로 짐작한 것이에요. 나눠 봐요.',a:'글 내용',b:'추론',hint:'글에 그대로 쓰여 있는지 교과서에서 찾아봐요',items:[['한글은 ‘언문’으로 불리다 고종의 명령으로 ‘국문’으로 바뀌었다.',0],['‘한글’로 이름이 바뀌면서 한글에 자부심을 가지게 되었을 것이다.',1],['『큰사전』 원고는 서울역 창고에서 발견되었다.',0],['원고를 찾을 때까지 회원들은 밤잠을 설쳤을 것이다.',1],['조선어학회의 목표는 두 가지였다.',0]]}),
+  Q({h:'추론의 재료',q:'추론할 때 쓰는 재료로 알맞은 것은?',opts:['글에서 찾을 수 있는 단서와 내 경험이나 지식','글과 상관없는 상상','친구가 말한 답을 그대로 쓰기'],ans:0})]);
+PANELS.row2=()=>steps('row2',[
+  W({h:'203쪽 둘째 줄',q:'<b>글 내용</b>: 『말모이』는 출간되지 못했으나, 그 뜻이 이어진 조선어학회에서 사전 편찬 작업을 이어받았다.<br><b>질문</b>: 조선어학회에서 사전 편찬 작업을 이어받은 까닭은 무엇일까요?<br><b>추론</b>: 그 당시 우리말을 연구하는 사람에게 <u>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</u> 은/는 중요한 일이었을 것이다.',key:'row2',min:3,ph:'빈칸에 들어갈 말을 써요',chips:['사전 편찬','우리말을 지키는 것','스승의 뜻을 잇는 것'],short:'빈칸에 들어갈 말을 써요',
+   ex:'‘우리말 사전을 만드는 것’, ‘우리말을 지키는 것’ 모두 좋아요. 1910년 거리에서 들은 ‘언어는 민족혼’이라는 단서를 떠올렸다면 훌륭한 추론이에요.'})]);
+PANELS.row3=()=>steps('row3',[
+  W({h:'셋째 줄 · 질문 만들기',q:'<b>글 내용</b>: 우리나라가 광복을 맞은 이후, 조선어학회 회원들은 『큰사전』의 원고를 찾아다녔다.<br>이 글 내용을 보고 떠오르는 <b>질문</b>을 만들어요. ‘왜’, ‘어떤’, ‘무엇’을 넣어 보세요.',key:'row3q',min:8,ph:'예) 회원들이 원고를 … 까닭은 무엇일까요?',short:'물음표로 끝나는 질문을 만들어요'}),
+  W({h:'셋째 줄 · 추론하기',q:'내 질문에 대한 답을 단서로 추론해요. 「~ 것이다.」로 끝내 봐요.',key:'row3a',min:10,ph:'예) 원고에는 … 담겨 있어서 … 것이다.',
+   ex:'질문: 회원들이 원고를 꼭 찾고 싶었던 까닭은 무엇일까요?<br>추론: 원고에 오랜 세월의 노력과 우리말을 지키려는 마음이 담겨 있어서, 다시 만들기보다 꼭 찾고 싶었을 것이다.'})]);
+
+/* ---------------- 도장 수첩·인증서·선생님 ---------------- */
+function panelClues(){openSheet('도장 수첩','도장 '+clueCount()+' / 10 · ★ '+starCount()+' / 12');
+  SCENES.forEach((sc,i)=>{if(i===0||i===6)add(el('<h3 style="color:var(--navy)">'+(i?'2차시 · 큰사전 완간 기념관':'1차시 · 원고가 걸어온 길')+'</h3>'));
+    add(el('<div class="cluecard" style="'+(sceneDone(i)?'':'opacity:.5;border-style:dashed')+'"><span class="seal">'+(sceneDone(i)?sc.seal:'?')+'</span><b>'+(i+1)+' · '+sc.title+'</b><span>'+(sceneDone(i)?sc.clue:'아직 · '+sc.place+' (교과서 '+sc.tb+'쪽)')+'</span></div>'));});
+  add(el('<div class="gbox"><h3>★ 도전 기록</h3><div>보퉁이 줍기 '+starHtml(S.stars.bgame||0)+'</div><div>상자 오르기 '+starHtml(S.stars.climb||0)+'</div><div>낱말 번개 '+starHtml(S.stars.flash||0)+'</div><div>원고 지킴이 보너스 '+starHtml(S.stars.cert||0)+'</div></div>'));
+  if(clueCount()===10){const b=el('<button class="btn flame" type="button">원고 지킴이 인증서 보기</button>');b.addEventListener('click',panelCert);add(b);}}
+function panelCert(){if(!S.stars.cert)setStars('cert',3);openSheet('원고 지킴이 인증서','큰사전 시간 여행 완주');
+  const box=add(el('<div class="box warm"><label for="nm">인증서에 쓸 이름</label><input type="text" id="nm" maxlength="12" placeholder="이름을 써요"></div>'));const nm=box.querySelector('#nm');nm.value=S.name||'';
+  const cert=add(el('<div class="cert"><div class="note">6학년 2학기 국어 · 4. 소중한 우리말</div><h3>큰사전 원고 지킴이</h3><div class="who"></div><p>「큰사전이 필요하다」를 꼼꼼히 읽고, 1908년부터 1957년까지 우리말 사전을 지켜 낸 사람들의 노력을 차례대로 정리했습니다. 또한 글의 단서와 자신의 지식으로 글 내용을 추론했습니다.</p><div class="note" id="cd"></div></div>'));
+  const d=new Date();const upd=()=>{cert.querySelector('.who').textContent=(S.name||'○○○')+' 지킴이';cert.querySelector('#cd').textContent=d.getFullYear()+'년 '+(d.getMonth()+1)+'월 '+d.getDate()+'일 · 1957 큰사전 완간 기념관';};
+  nm.addEventListener('input',()=>{S.name=nm.value.trim();save();upd();});upd();}
+function panelTeach(){openSheet('선생님 안내','차시별로 이렇게 써요');
+  add(el('<div class="box"><h3>장면과 차시</h3><table class="plan">'+SCENES.map((s,i)=>'<tr><th>'+s.no+'</th><td>장면 '+(i+1)+' '+s.place+' · 교과서 '+s.tb+'쪽</td></tr>').join('')+'</table></div>'));
+  add(el('<div class="box"><h3>수업 흐름</h3><ul class="list"><li><b>1차시(194~200쪽 읽기)</b>: 장면에 들어가 인물 이야기를 듣고 → 그 장면의 교과서 쪽을 읽고 「다 읽었어요」 체크 → 활동 → 교과서 표시(밑줄·동그라미·생각하며 읽기) 체크 → 도장. 장면 6개가 글의 순서와 같아요.</li><li><b>2차시(201~203쪽 정리)</b>: 기념관 4개 방이 201쪽 3번, 4번 (1)~(3), 202쪽 연표, 203쪽 추론 표와 하나씩 짝지어져 있어요. 화면에서 확인한 뒤 교과서에 써야 도장이 나와요.</li><li>교과서 표시(밑줄·물결 밑줄·번호 붙이기)는 꼼꼼히 읽기를 위한 장치예요. 반 규칙과 다르면 말로 바꿔 안내해 주세요.</li><li>빨리 끝낸 아이는 ★ 도전(보퉁이 줍기, 상자 오르기, 낱말 번개)을 해요. 도장과는 상관없어요.</li><li>쓰기 활동에 적은 글은 이 기기에만 저장돼요. 다른 친구 기기에서는 보이지 않아요.</li></ul></div>'));
+  const lk=add(el('<div class="box"><h3>순서 잠금</h3><p>2차시를 먼저 열어야 하거나 새 크롬북으로 중간부터 시작한다면, 그 기기만 잠금을 풀어 주세요.</p><button class="btn sm" type="button" id="lk"></button></div>'));
+  const lkb=lk.querySelector('#lk');const lkd=()=>lkb.textContent=S.free?'다시 순서대로 잠그기':'이 기기 잠금 풀기';lkd();lkb.addEventListener('click',()=>{S.free=!S.free;save();lkd();sfx.tap();});
+  const rs=add(el('<div class="box"><h3>이 기기의 기록 지우기</h3><p>도장, 별, 쓴 글은 이 기기의 이 브라우저에만 저장돼요.</p><div class="row"><button class="btn ghost sm" type="button" id="r1">기록 지우기</button><button class="btn sm" type="button" id="r2" hidden style="background:var(--bad)">정말 지울게요</button></div></div>'));
+  rs.querySelector('#r1').addEventListener('click',e=>{e.target.hidden=true;rs.querySelector('#r2').hidden=false;});rs.querySelector('#r2').addEventListener('click',()=>{try{localStorage.removeItem(KEY);}catch(e){}location.reload();});
+  add(el('<div class="box"><h3>자료</h3><p class="note">6학년 2학기 국어 나 4단원 194~203쪽 「큰사전이 필요하다」의 내용과 활동 순서를 따랐어요. 인물의 말은 교과서 내용을 바탕으로 새로 썼고, 사진은 따로 그린 그림이에요. 교과서 본문은 화면에 옮기지 않았으니 반드시 교과서로 읽게 해 주세요. 우리 반 수업용으로 써 주세요.</p></div>'));}
+
+/* ---------------- 시작 ---------------- */
+const intro=$('#intro');
+if(clueCount()){$('#startBtn').textContent='이어서 여행하기';$('#introSaved').textContent='모은 도장 '+clueCount()+'개';}
+$('#startBtn').addEventListener('click',()=>{ac();sfx.tap();intro.classList.add('gone');started=true;openMap();});
+updateHud();
+if(document.fonts&&document.fonts.load){Promise.all([document.fonts.load('40px Jua'),document.fonts.load('20px "Gowun Dodum"'),document.fonts.load('20px "Gowun Batang"')]).then(()=>redraws.forEach(r=>r())).catch(()=>{});}
+
+/* ---------------- 루프 ---------------- */
+const promptEl=$('#prompt'),promptBtn=$('#promptBtn');let nearSpot=null;
+promptBtn.addEventListener('click',()=>{if(nearSpot)openSpot(nearSpot);});
+const clock=new THREE.Clock(),camPos=new THREE.Vector3(),camLook=new THREE.Vector3();
+function resize(){const w=stage.clientWidth,h=stage.clientHeight;renderer.setSize(w,h,false);camera.aspect=w/h;camera.fov=w<h?74:62;camera.updateProjectionMatrix();}
+window.addEventListener('resize',resize);resize();
+function loop(){
+  const dt=Math.min(clock.getDelta(),.05),t=clock.elapsedTime;let moving=false;
+  if(cur>=0){
+    const running=!!(keys.run||runToggle);
+    if(!busy()){
+      const spd=running?6.4:3.6;
+      if(keys.left)heading+=2.2*dt;if(keys.right)heading-=2.2*dt;
+      const f=(keys.up?1:0)-(keys.down?1:0);
+      if(f){pos.x+=Math.sin(heading)*f*spd*dt;pos.z+=Math.cos(heading)*f*spd*dt;moving=true;}
+      if(target){const dx=target.x-pos.x,dz=target.z-pos.z,dist=Math.hypot(dx,dz);
+        if(dist<.08){target=null;if(pending){const s=spotPos(pending);if(s)heading=s.h;const k=pending;pending=null;openSpot(k);}}
+        else{const want=Math.atan2(dx,dz),diff=((want-heading+Math.PI*3)%(Math.PI*2))-Math.PI;heading+=diff*Math.min(1,8*dt);const sp=Math.min(dist,(running?6.4:4.2)*dt);pos.x+=dx/dist*sp;pos.z+=dz/dist*sp;moving=true;}}
+      clampPos(pos);
+      const G=groundAt(pos.x,pos.z);
+      vy-=20*dt;posY+=vy*dt;
+      if(posY<=G){posY=G;vy=0;onGround=true;}else onGround=false;
+      chTick();
+    }
+    if(CR.tick)CR.tick(dt,t);
+    kid.position.set(pos.x,posY+(moving&&onGround?Math.abs(Math.sin(t*(running?14:10)))*.05:0),pos.z);kid.rotation.y=heading;
+    const sw=moving?Math.sin(t*(running?14:10))*(running?.8:.5):0;legs[0].rotation.x=onGround?sw:-.6;legs[1].rotation.x=onGround?-sw:.6;
+    if(CR.npc){const n=CS.npc,o=CR.npc,d=Math.hypot(pos.x-n.x,pos.z-n.z);if(!reduceMotion)o.p.userData.body.position.y=Math.sin(t*2+o.ph)*.015;
+      const want=d<4?Math.atan2(pos.x-n.x,pos.z-n.z):n.a,diff=((want-o.p.rotation.y+Math.PI*3)%(Math.PI*2))-Math.PI;o.p.rotation.y+=diff*Math.min(1,dt*3);
+      if(o.mk.visible&&!reduceMotion)o.mk.position.y=2.05*(n.look.h||1)+Math.abs(Math.sin(t*3+o.ph))*.12;}
+    let best=null,bd=1e9;
+    if(!CH){CS.stations.forEach(s=>{const d=Math.hypot(s.x-pos.x,s.z-pos.z);if(d<s.r&&d<bd){bd=d;best=s.k;}});
+      if(CS.npc){const s=spotPos('npc'),d=Math.hypot(s.x-pos.x,s.z-pos.z);if(d<s.r&&d<bd){bd=d;best='npc';}}}
+    if(best!==nearSpot){nearSpot=best;if(best)promptBtn.textContent=best==='npc'?CS.npc.name+'에게 말 걸기':CS.stations.find(s=>s.k===best).label;}
+    promptEl.classList.toggle('on',!!nearSpot&&!busy()&&!target);
+    const fx=Math.sin(heading),fz=Math.cos(heading);
+    const cp=new THREE.Vector3(pos.x-fx*4.3,2.75+posY*.85,pos.z-fz*4.3);
+    cp.x=Math.max(-CS.hx+.3,Math.min(CS.hx-.3,cp.x));cp.z=Math.max(-CS.hz+.3,Math.min(CS.hz-.3,cp.z));
+    const lk=new THREE.Vector3(pos.x+fx*2.6,1.3+posY*.9,pos.z+fz*2.6);
+    if(first){camPos.copy(cp);camLook.copy(lk);first=false;}
+    camPos.lerp(cp,Math.min(1,dt*4));camLook.lerp(lk,Math.min(1,dt*4));camera.position.copy(camPos);camera.lookAt(camLook);
+  }else{camera.position.set(0,3,6);camera.lookAt(0,1,0);}
+  renderer.render(scene,camera);requestAnimationFrame(loop);
+}
+loop();
+})();
+</script>
+</body>
+</html>
